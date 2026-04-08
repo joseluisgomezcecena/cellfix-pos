@@ -1,0 +1,21 @@
+{
+    "name": "celfix/affiliate-discount",
+    "description": "Affiliate Business Discount Management Module for UltimatePOS",
+    "type": "module",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "CELFIX Team",
+            "email": "admin@daseo.co"
+        }
+    ],
+    "require": {
+        "php": "^8.0",
+        "illuminate/support": "^9.0|^10.0|^11.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "Modules\\AffiliateDiscount\\": ""
+        }
+    }
+}

@@ -1,0 +1,11 @@
+{
+    "name": "Cellphone",
+    "alias": "cellphone",
+    "description": "",
+    "keywords": [],
+    "priority": 0,
+    "providers": [
+        "Modules\\Cellphone\\Providers\\CellphoneServiceProvider"
+    ],
+    "files": []
+}

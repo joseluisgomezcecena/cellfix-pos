@@ -1,0 +1,42 @@
+{
+    "name": "celfix/inventory-multi-location",
+    "type": "laravel-module",
+    "description": "Multi-location inventory management module for POS systems. Provides comprehensive inventory tracking, stock transfers, and location-based reporting capabilities.",
+    "keywords": ["laravel", "module", "inventory", "pos", "multi-location", "stock", "transfers"],
+    "homepage": "https://github.com/k0kin/inventory-multi-location",
+    "license": "MIT",
+    "version": "1.0.0",
+    "authors": [
+        {
+            "name": "CELFIX Team",
+            "email": "admin@daseo.co"
+        }
+    ],
+    "require": {
+        "php": "^8.0|^8.1|^8.2|^8.3",
+        "laravel/framework": "^9.0|^10.0|^11.0"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^9.0|^10.0"
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Modules\\InventoryMultiLocation\\Providers\\InventoryMultiLocationServiceProvider"
+            ],
+            "aliases": {}
+        }
+    },
+    "autoload": {
+        "psr-4": {
+            "Modules\\InventoryMultiLocation\\": ""
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Modules\\InventoryMultiLocation\\Tests\\": "Tests/"
+        }
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}

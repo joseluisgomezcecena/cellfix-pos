@@ -1,0 +1,27 @@
+{
+    "name": "InventoryMultiLocation",
+    "alias": "inventorymultilocation",
+    "description": "Multi-location inventory management module for POS systems. Provides comprehensive inventory tracking, stock transfers, and location-based reporting capabilities.",
+    "keywords": [
+        "inventory",
+        "multi-location",
+        "pos",
+        "stock",
+        "transfers",
+        "reports"
+    ],
+    "author": "CELFIX Team",
+    "email": "admin@daseo.co",
+    "homepage": "https://github.com/k0kin/inventory-multi-location",
+    "license": "MIT",
+    "priority": 0,
+    "providers": [
+        "Modules\\InventoryMultiLocation\\Providers\\InventoryMultiLocationServiceProvider"
+    ],
+    "aliases": {},
+    "files": [],
+    "requires": {
+        "laravel": "^9.0|^10.0|^11.0",
+        "php": "^8.0"
+    }
+}

@@ -1,0 +1,548 @@
+<?php
+
+namespace Modules\InventoryMultiLocation\Http\Controllers;
+
+use Illuminate\Contracts\Support\Renderable;
+use Illuminate\Http\Request;
+use Illuminate\Routing\Controller;
+use Modules\InventoryMultiLocation\Entities\InventoryTransfer;
+use Modules\InventoryMultiLocation\Entities\InventoryTransferItem;
+use DB;
+use Carbon\Carbon;
+use Cache;
+use App\Transaction;
+use App\PurchaseLine;
+use App\TransactionSellLine;
+
+class TransferController extends Controller
+{
+    public function __construct()
+    {
+        $this->middleware('auth');
+        $this->middleware('AdminSidebarMenu');
+    }
+
+    public function index(Request $request)
+    {
+        $business_id = request()->session()->get('user.business_id');
+        $user = auth()->user();
+
+        // Check if user has permission to view all locations for inventory
+        if ($user->can('inventory_multi.view_all_locations')) {
+            $permitted_locations = 'all';
+        } else {
+            $permitted_locations = $user->permitted_locations();
+        }
+
+        $query = InventoryTransfer::with(['fromLocation', 'toLocation', 'createdBy', 'items'])
+            ->where('business_id', $business_id);
+
+        if ($permitted_locations !== 'all') {
+            $query->where(function($q) use ($permitted_locations) {
+                $q->whereIn('from_location_id', $permitted_locations)
+                  ->orWhereIn('to_location_id', $permitted_locations);
+            });
+        }
+
+        if ($request->filled('status')) {
+            $query->where('status', $request->get('status'));
+        }
+
+        if ($request->filled('from_date')) {
+            $query->whereDate('created_at', '>=', $request->get('from_date'));
+        }
+
+        if ($request->filled('to_date')) {
+            $query->whereDate('created_at', '<=', $request->get('to_date'));
+        }
+
+        $transfers = $query->orderBy('created_at', 'desc')->paginate(20);
+
+        $locations_query = DB::table('business_locations')
+            ->where('business_id', $business_id)
+            ->where('is_active', 1);
+
+        if ($permitted_locations !== 'all') {
+            $locations_query->whereIn('id', $permitted_locations);
+        }
+
+        $locations = $locations_query->get();
+
+        return view('inventorymultilocation::transfers.index', compact('transfers', 'locations'));
+    }
+
+    public function create()
+    {
+        $business_id = request()->session()->get('user.business_id');
+        $user = auth()->user();
+
+        // Check if user has permission to view all locations for inventory
+        if ($user->can('inventory_multi.view_all_locations')) {
+            $permitted_locations = 'all';
+        } else {
+            $permitted_locations = $user->permitted_locations();
+        }
+
+        $locations_query = DB::table('business_locations')
+            ->where('business_id', $business_id)
+            ->where('is_active', 1);
+
+        if ($permitted_locations !== 'all') {
+            $locations_query->whereIn('id', $permitted_locations);
+        }
+
+        $locations = $locations_query->get();
+
+        return view('inventorymultilocation::transfers.create', compact('locations'));
+    }
+
+    public function store(Request $request)
+    {
+        try {
+            DB::beginTransaction();
+
+            $business_id = request()->session()->get('user.business_id');
+            $user_id = auth()->id();
+
+            // Handle bulk transfer
+            if ($request->has('bulk_transfer')) {
+                return $this->processBulkTransfer($request, $business_id, $user_id);
+            }
+
+            // Handle single item transfer
+            if ($request->has('product_id')) {
+                return $this->processSingleTransfer($request, $business_id, $user_id);
+            }
+
+            // If we reach here, no valid transfer type was provided
+            return response()->json([
+                'success' => false,
+                'message' => 'Invalid transfer request. Please use bulk or single transfer.'
+            ]);
+
+        } catch (\Exception $e) {
+            DB::rollback();
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage()
+            ]);
+        }
+    }
+
+    private function processSingleTransfer(Request $request, $business_id, $user_id)
+    {
+        $request->validate([
+            'product_id' => 'required|exists:products,id',
+            'variation_id' => 'required|exists:variations,id',
+            'from_location_id' => 'required|exists:business_locations,id',
+            'to_location_id' => 'required|exists:business_locations,id',
+            'quantity' => 'required|numeric|min:0.01'
+        ]);
+
+        // Check stock availability
+        $currentStock = DB::table('variation_location_details')
+            ->where('variation_id', $request->variation_id)
+            ->where('location_id', $request->from_location_id)
+            ->value('qty_available') ?: 0;
+
+        if ($currentStock < $request->quantity) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Insufficient stock. Available: ' . $currentStock
+            ]);
+        }
+
+        // Get product cost
+        $variation = DB::table('variations')
+            ->where('id', $request->variation_id)
+            ->first();
+
+        // Create transfer
+        $transfer = InventoryTransfer::create([
+            'business_id' => $business_id,
+            'reference_no' => $this->generateReferenceNo($business_id),
+            'from_location_id' => $request->from_location_id,
+            'to_location_id' => $request->to_location_id,
+            'created_by' => $user_id,
+            'status' => 'completed', // Auto-complete single transfers
+            'notes' => $request->notes,
+            'total_amount' => $variation->default_purchase_price * $request->quantity,
+            'transferred_at' => now(),
+            'received_at' => now()
+        ]);
+
+        // Create transfer item
+        InventoryTransferItem::create([
+            'transfer_id' => $transfer->id,
+            'product_id' => $request->product_id,
+            'variation_id' => $request->variation_id,
+            'quantity' => $request->quantity,
+            'unit_cost' => $variation->default_purchase_price,
+            'total_cost' => $variation->default_purchase_price * $request->quantity,
+            'quantity_received' => $request->quantity,
+            'notes' => $request->notes
+        ]);
+
+        // Update stock levels
+        $this->updateStockLevels($request->variation_id, $request->from_location_id, $request->to_location_id, $request->quantity, $variation->default_purchase_price);
+
+        // Clear cache to ensure updated inventory is visible immediately
+        $this->clearInventoryCache();
+
+        DB::commit();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Stock transferred successfully'
+        ]);
+    }
+
+    private function processBulkTransfer(Request $request, $business_id, $user_id)
+    {
+        $request->validate([
+            'to_location_id' => 'required|exists:business_locations,id',
+            'items' => 'required|array|min:1',
+            'items.*.product_id' => 'required|exists:products,id',
+            'items.*.variation_id' => 'required|exists:variations,id',
+            'items.*.from_location_id' => 'required|exists:business_locations,id',
+            'items.*.quantity' => 'required|numeric|min:0.01'
+        ]);
+
+        $totalAmount = 0;
+        $transferItems = [];
+
+        // Validate stock and prepare items
+        foreach ($request->items as $item) {
+            $currentStock = DB::table('variation_location_details')
+                ->where('variation_id', $item['variation_id'])
+                ->where('location_id', $item['from_location_id'])
+                ->value('qty_available') ?: 0;
+
+            if ($currentStock < $item['quantity']) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Insufficient stock for one or more items'
+                ]);
+            }
+
+            $variation = DB::table('variations')->where('id', $item['variation_id'])->first();
+            $itemTotal = $variation->default_purchase_price * $item['quantity'];
+            $totalAmount += $itemTotal;
+
+            $transferItems[] = [
+                'product_id' => $item['product_id'],
+                'variation_id' => $item['variation_id'],
+                'from_location_id' => $item['from_location_id'],
+                'quantity' => $item['quantity'],
+                'unit_cost' => $variation->default_purchase_price,
+                'total_cost' => $itemTotal
+            ];
+        }
+
+        // Create transfer
+        $transfer = InventoryTransfer::create([
+            'business_id' => $business_id,
+            'reference_no' => $this->generateReferenceNo($business_id),
+            'from_location_id' => $transferItems[0]['from_location_id'], // Use first item's from location
+            'to_location_id' => $request->to_location_id,
+            'created_by' => $user_id,
+            'status' => 'completed',
+            'notes' => $request->notes,
+            'total_amount' => $totalAmount,
+            'transferred_at' => now(),
+            'received_at' => now()
+        ]);
+
+        // Create transfer items and update stock
+        foreach ($transferItems as $item) {
+            InventoryTransferItem::create([
+                'transfer_id' => $transfer->id,
+                'product_id' => $item['product_id'],
+                'variation_id' => $item['variation_id'],
+                'quantity' => $item['quantity'],
+                'unit_cost' => $item['unit_cost'],
+                'total_cost' => $item['total_cost'],
+                'quantity_received' => $item['quantity']
+            ]);
+
+            $this->updateStockLevels($item['variation_id'], $item['from_location_id'], $request->to_location_id, $item['quantity'], $item['unit_cost']);
+        }
+
+        // Clear cache to ensure updated inventory is visible immediately
+        $this->clearInventoryCache();
+
+        DB::commit();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Bulk transfer completed successfully'
+        ]);
+    }
+
+    private function updateStockLevels($variation_id, $from_location_id, $to_location_id, $quantity, $unit_cost = null)
+    {
+        // Decrease stock in from location
+        DB::table('variation_location_details')
+            ->where('variation_id', $variation_id)
+            ->where('location_id', $from_location_id)
+            ->decrement('qty_available', $quantity);
+
+        // Get variation to access product_id
+        $variation = DB::table('variations')->where('id', $variation_id)->first();
+
+        // Check if ALL variations of this product now have zero stock at source location
+        // If so, remove the product from product_locations for this location
+        $totalStockAtSource = DB::table('variation_location_details')
+            ->where('product_id', $variation->product_id)
+            ->where('location_id', $from_location_id)
+            ->sum('qty_available');
+
+        // If no stock remains at source location, remove from product_locations
+        // This ensures product doesn't appear in /products or /pos for locations with 0 stock
+        if ($totalStockAtSource <= 0) {
+            DB::table('product_locations')
+                ->where('product_id', $variation->product_id)
+                ->where('location_id', $from_location_id)
+                ->delete();
+        }
+
+        // Increase stock in to location
+        $toLocationStock = DB::table('variation_location_details')
+            ->where('variation_id', $variation_id)
+            ->where('location_id', $to_location_id)
+            ->first();
+
+        if ($toLocationStock) {
+            DB::table('variation_location_details')
+                ->where('variation_id', $variation_id)
+                ->where('location_id', $to_location_id)
+                ->increment('qty_available', $quantity);
+        } else {
+            // Create new record if doesn't exist
+            DB::table('variation_location_details')->insert([
+                'product_id' => $variation->product_id,
+                'product_variation_id' => $variation->product_variation_id,
+                'variation_id' => $variation_id,
+                'location_id' => $to_location_id,
+                'qty_available' => $quantity,
+                'created_at' => now(),
+                'updated_at' => now()
+            ]);
+        }
+
+        // Ensure product is added to product_locations for destination location
+        // This is critical for the product to appear in the Products page and POS
+        $productLocationExists = DB::table('product_locations')
+            ->where('product_id', $variation->product_id)
+            ->where('location_id', $to_location_id)
+            ->exists();
+
+        if (!$productLocationExists) {
+            DB::table('product_locations')->insert([
+                'product_id' => $variation->product_id,
+                'location_id' => $to_location_id
+            ]);
+        }
+
+        // Create sell_transfer transaction at SOURCE location (decrements stock)
+        // This records the stock OUT transaction
+        $sell_transfer_id = $this->createSellTransferTransaction(
+            $variation->product_id,
+            $variation_id,
+            $from_location_id,
+            $quantity,
+            $unit_cost ?? $variation->default_purchase_price
+        );
+
+        // Create purchase_transfer transaction at DESTINATION location (increments stock)
+        // This records the stock IN transaction and links back to the sell_transfer
+        $this->createPurchaseTransferTransaction(
+            $variation->product_id,
+            $variation_id,
+            $to_location_id,
+            $quantity,
+            $unit_cost ?? $variation->default_purchase_price,
+            $sell_transfer_id
+        );
+    }
+
+    private function createSellTransferTransaction($product_id, $variation_id, $from_location_id, $quantity, $unit_cost)
+    {
+        $business_id = request()->session()->get('user.business_id');
+        $user_id = auth()->id();
+
+        // Create sell_transfer transaction at SOURCE location
+        $transaction = Transaction::create([
+            'business_id' => $business_id,
+            'location_id' => $from_location_id,
+            'type' => 'sell_transfer',
+            'status' => 'final',
+            'payment_status' => 'paid',
+            'transaction_date' => now(),
+            'total_before_tax' => $unit_cost * $quantity,
+            'final_total' => $unit_cost * $quantity,
+            'created_by' => $user_id,
+        ]);
+
+        // Create sell_line for this transaction
+        TransactionSellLine::create([
+            'transaction_id' => $transaction->id,
+            'product_id' => $product_id,
+            'variation_id' => $variation_id,
+            'quantity' => $quantity,
+            'unit_price_before_discount' => $unit_cost,
+            'unit_price' => $unit_cost,
+            'unit_price_inc_tax' => $unit_cost,
+            'item_tax' => 0,
+            'tax_id' => null,
+        ]);
+
+        return $transaction->id;
+    }
+
+    private function createPurchaseTransferTransaction($product_id, $variation_id, $location_id, $quantity, $unit_cost, $transfer_parent_id = null)
+    {
+        $business_id = request()->session()->get('user.business_id');
+        $user_id = auth()->id();
+
+        // Create purchase_transfer transaction at destination location
+        $transaction = Transaction::create([
+            'business_id' => $business_id,
+            'location_id' => $location_id,
+            'type' => 'purchase_transfer',
+            'status' => 'received',
+            'payment_status' => 'paid',
+            'transaction_date' => now(),
+            'total_before_tax' => $unit_cost * $quantity,
+            'final_total' => $unit_cost * $quantity,
+            'transfer_parent_id' => $transfer_parent_id,
+            'created_by' => $user_id,
+        ]);
+
+        // Create purchase_line for this transaction
+        PurchaseLine::create([
+            'transaction_id' => $transaction->id,
+            'product_id' => $product_id,
+            'variation_id' => $variation_id,
+            'quantity' => $quantity,
+            'pp_without_discount' => $unit_cost,
+            'purchase_price' => $unit_cost,
+            'purchase_price_inc_tax' => $unit_cost,
+            'item_tax' => 0,
+            'tax_id' => null,
+            'quantity_sold' => 0,
+            'quantity_adjusted' => 0,
+            'quantity_returned' => 0,
+            'mfg_quantity_used' => 0,
+        ]);
+    }
+
+    private function generateReferenceNo($business_id)
+    {
+        $count = InventoryTransfer::where('business_id', $business_id)
+                    ->whereDate('created_at', today())
+                    ->count();
+
+        return 'IT' . date('Ymd') . str_pad($count + 1, 4, '0', STR_PAD_LEFT);
+    }
+
+    public function show($id)
+    {
+        $business_id = request()->session()->get('user.business_id');
+
+        $transfer = InventoryTransfer::with(['fromLocation', 'toLocation', 'createdBy', 'items.product', 'items.variation'])
+            ->where('business_id', $business_id)
+            ->findOrFail($id);
+
+        return view('inventorymultilocation::transfers.show', compact('transfer'));
+    }
+
+    public function complete(Request $request, $id)
+    {
+        try {
+            DB::beginTransaction();
+
+            $business_id = request()->session()->get('user.business_id');
+
+            $transfer = InventoryTransfer::where('business_id', $business_id)
+                ->where('status', 'pending')
+                ->findOrFail($id);
+
+            $transfer->update([
+                'status' => 'completed',
+                'received_at' => now()
+            ]);
+
+            // Update stock levels
+            foreach ($transfer->items as $item) {
+                $this->updateStockLevels(
+                    $item->variation_id,
+                    $transfer->from_location_id,
+                    $transfer->to_location_id,
+                    $item->quantity,
+                    $item->unit_cost
+                );
+
+                $item->update(['quantity_received' => $item->quantity]);
+            }
+
+            // Clear cache to ensure updated inventory is visible immediately
+            $this->clearInventoryCache();
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Transfer completed successfully'
+            ]);
+
+        } catch (\Exception $e) {
+            DB::rollback();
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage()
+            ]);
+        }
+    }
+
+    public function destroy($id)
+    {
+        try {
+            $business_id = request()->session()->get('user.business_id');
+
+            $transfer = InventoryTransfer::where('business_id', $business_id)
+                ->where('status', 'pending')
+                ->findOrFail($id);
+
+            $transfer->update(['status' => 'cancelled']);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Transfer cancelled successfully'
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage()
+            ]);
+        }
+    }
+
+    /**
+     * Clear inventory-related caches to ensure updated data is visible
+     */
+    private function clearInventoryCache()
+    {
+        try {
+            // Clear general application cache
+            Cache::flush();
+
+            // If using specific cache tags, uncomment and adjust as needed:
+            // Cache::tags(['products', 'inventory'])->flush();
+        } catch (\Exception $e) {
+            // Log error but don't fail the transaction
+            \Log::warning('Failed to clear cache after inventory transfer: ' . $e->getMessage());
+        }
+    }
+}

@@ -1,0 +1,11 @@
+{
+    "name": "Layaway",
+    "alias": "layaway",
+    "description": "",
+    "keywords": [],
+    "priority": 0,
+    "providers": [
+        "Modules\\Layaway\\Providers\\LayawayServiceProvider"
+    ],
+    "files": []
+}

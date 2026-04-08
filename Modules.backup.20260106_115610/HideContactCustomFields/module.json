@@ -1,0 +1,25 @@
+{
+    "name": "HideContactCustomFields",
+    "alias": "hidecontactcustomfields",
+    "description": "Hides contact custom fields 6-10 from all contact forms including POS",
+    "keywords": [
+        "contact",
+        "custom fields",
+        "pos",
+        "ui"
+    ],
+    "author": "Celfix",
+    "email": "info@celfix.mx",
+    "homepage": "https://celfix.mx",
+    "license": "MIT",
+    "priority": 0,
+    "providers": [
+        "Modules\\HideContactCustomFields\\Providers\\HideContactCustomFieldsServiceProvider"
+    ],
+    "aliases": {},
+    "files": [],
+    "requires": {
+        "laravel": "^9.0|^10.0|^11.0",
+        "php": "^8.0"
+    }
+}

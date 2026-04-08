@@ -1,0 +1,21 @@
+{
+    "name": "celfix/hide-contact-custom-fields",
+    "description": "Hides contact custom fields 6-10 from all contact forms",
+    "type": "library",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Celfix",
+            "email": "info@celfix.mx"
+        }
+    ],
+    "autoload": {
+        "psr-4": {
+            "Modules\\HideContactCustomFields\\": ""
+        }
+    },
+    "require": {
+        "php": "^8.0",
+        "laravel/framework": "^9.0|^10.0|^11.0"
+    }
+}

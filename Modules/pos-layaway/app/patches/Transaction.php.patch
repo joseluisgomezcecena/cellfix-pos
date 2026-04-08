@@ -1,0 +1,14 @@
+--- app/Transaction.php.original
++++ app/Transaction.php.modified
+@@ -408,4 +408,11 @@
+         return $this->hasMany(\App\TransactionPayment::class);
+     }
+
++    /**
++     * Get the associated layaway
++     */
++    public function layaway()
++    {
++        return $this->belongsTo(\Modules\Layaway\Entities\Layaway::class, 'layaway_id');
++    }
+ }

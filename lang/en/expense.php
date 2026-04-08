@@ -1,0 +1,25 @@
+<?php
+
+return [
+   'expenses' => 'Gastos',
+   'expense_categories' => 'Categorías de gastos',
+   'manage_your_expense_categories' => 'Administra tus categorías de gastos',
+   'all_your_expense_categories' => 'Todas tus categorías de gastos',
+   'expense_category' => 'Categoría de gastos', 
+   'category_name' => 'Nombre de la categoría',
+   'category_code' => 'Código de categoría',
+   'added_success' => 'Categoría de gastos agregada exitosamente',
+   'updated_success' => 'Categoría de gastos actualizada exitosamente',
+   'deleted_success' => 'Categoría de gastos eliminada exitosamente',
+   'add_expense_category' => 'Agregar categoría de gastos',
+   'edit_expense_category' => 'Modificar categoría de gastos',
+   'all_expenses' => 'Todos los gastos',
+   'expense_status' => 'Estado del gasto',
+   'add_expense' => 'Agregar gasto',
+   'edit_expense' => 'Modificar gasto',
+   'expense_note' => 'Nota del gasto',
+   'expense_add_success' => 'Gasto agregado exitosamente',
+   'expense_update_success' => 'Gastos actualizados exitosamente', 
+   'expense_delete_success' => 'Gastos eliminados exitosamente',
+   'expense_for' => 'Gasto para',
+];

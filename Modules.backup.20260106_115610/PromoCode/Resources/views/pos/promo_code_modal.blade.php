@@ -1,0 +1,60 @@
+<div class="modal fade" id="promo_code_modal" tabindex="-1" role="dialog">
+    <div class="modal-dialog" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+                <h4 class="modal-title">{{ __('promocode::lang.apply_promo_code') }}</h4>
+            </div>
+            <div class="modal-body">
+                <div class="row">
+                    <div class="col-md-12">
+                        <div class="form-group">
+                            <label for="promo_company_name">{{ __('promocode::lang.enter_company_name') }}:</label>
+                            @php
+                                $promo_companies = \Modules\PromoCode\Entities\PromoCompany::where('business_id', session('user.business_id'))
+                                    ->where('is_active', 1)
+                                    ->orderBy('company_name')
+                                    ->pluck('company_name', 'company_name');
+                            @endphp
+                            {!! Form::select('promo_company_name', $promo_companies, null, [
+                                'class' => 'form-control select2',
+                                'id' => 'promo_company_name',
+                                'placeholder' => __('promocode::lang.company_name_help'),
+                                'style' => 'width: 100%;'
+                            ]) !!}
+                            <p class="help-block">{{ __('promocode::lang.company_name_help') }}</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="promo_code_details" style="display: none;">
+                    <hr>
+                    <div class="alert alert-success">
+                        <strong>{{ __('promocode::lang.promo_code_applied') }}</strong>
+                        <p id="promo_company_name_display"></p>
+                        <p><strong>{{ __('promocode::lang.total_promo_discount') }}:</strong>
+                            <span id="promo_total_discount_display"></span>
+                        </p>
+                    </div>
+                    <div id="promo_item_discounts_list"></div>
+                </div>
+
+                <div id="promo_code_error" class="alert alert-danger" style="display: none;">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-default" id="promo_code_clear_btn" style="display: none;">
+                    {{ __('promocode::lang.remove_promo_code') }}
+                </button>
+                <button type="button" class="btn btn-default" data-dismiss="modal">
+                    {{ __('messages.close') }}
+                </button>
+                <button type="button" class="btn btn-primary" id="promo_code_apply_btn">
+                    {{ __('promocode::lang.apply_promo_code') }}
+                </button>
+            </div>
+        </div>
+    </div>
+</div>

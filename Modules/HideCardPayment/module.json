@@ -1,0 +1,24 @@
+{
+    "name": "HideCardPayment",
+    "alias": "hidecardpayment",
+    "description": "Hides card payment option from POS system",
+    "keywords": [
+        "pos",
+        "payment",
+        "card"
+    ],
+    "author": "Celfix",
+    "email": "",
+    "homepage": "",
+    "license": "MIT",
+    "priority": 0,
+    "providers": [
+        "Modules\\HideCardPayment\\Providers\\HideCardPaymentServiceProvider"
+    ],
+    "aliases": {},
+    "files": [],
+    "requires": {
+        "laravel": "^9.0|^10.0|^11.0",
+        "php": "^8.0"
+    }
+}

@@ -1,0 +1,11 @@
+{
+    "name": "PromoCode",
+    "alias": "promocode",
+    "description": "Promotional code system for affiliated businesses",
+    "keywords": ["promo", "discount", "affiliate"],
+    "priority": 0,
+    "providers": [
+        "Modules\\PromoCode\\Providers\\PromoCodeServiceProvider"
+    ],
+    "files": []
+}

@@ -1,0 +1,27 @@
+<?php
+
+return [
+    'pageCheckout'         => 'MyFatoorah - Pago',
+    'pageError'            => 'Error de MyFatoorah',
+    'noPaymentGateways'    => 'No hay métodos de pago disponibles en su cuenta, por favor contacte a su gerente de cuenta.',
+    'howWouldYouLikeToPay' => '¿Cómo le gustaría pagar?',
+    'or'                   => 'O',
+    'payWith'              => 'Pagar Con',
+    'insertCardDetails'    => 'Insertar Detalles de Tarjeta',
+    'payNow'               => 'Pagar Ahora',
+    'holderName'           => 'Nombre en la Tarjeta',
+    'cardNumber'           => 'Número',
+    'expiryDate'           => 'MM/AA',
+    'securityCode'         => 'CVV',
+    'cardHolderNameLabel'  => 'Nombre del Titular de la Tarjeta',
+    'cardNumberLabel'      => 'Número de Tarjeta',
+    'expiryDateLabel'      => 'Fecha de Vencimiento',
+    'securityCodeLabel'    => 'Código de Seguridad',
+    'saveCard'             => 'Guardar número de tarjeta para pagos futuros',
+    'addCard'              => 'Usar otra tarjeta',
+    'deleteAlert.title'    => 'Eliminar Tarjeta',
+    'deleteAlert.message'  => '¿Está seguro que desea eliminar esta tarjeta?',
+    'deleteAlert.confirm'  => 'Sí',
+    'deleteAlert.cancel'   => 'No',
+    'Kindly review your MyFatoorah admin configuration due to a wrong entry.'   => 'Por favor revise su configuración de administrador de MyFatoorah debido a una entrada incorrecta.',
+];

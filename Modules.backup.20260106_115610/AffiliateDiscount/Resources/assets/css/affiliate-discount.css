@@ -1,0 +1,247 @@
+/**
+ * Affiliate Discount Module - Styles
+ * Styles for modal and admin interface
+ */
+
+/* ===== Modal Styles ===== */
+#affiliateDiscountModal .modal-dialog {
+    max-width: 600px;
+}
+
+#affiliateDiscountModal .modal-header {
+    background-color: #f4f4f4;
+    border-bottom: 2px solid #ddd;
+}
+
+#affiliateDiscountModal .modal-title {
+    color: #333;
+    font-weight: bold;
+    font-size: 18px;
+    text-transform: uppercase;
+}
+
+/* Business Select */
+#affiliateBusinessSelect {
+    padding: 10px;
+    font-size: 14px;
+    border: 2px solid #ddd;
+    border-radius: 4px;
+}
+
+#affiliateBusinessSelect:focus {
+    border-color: #9b59b6;
+    box-shadow: 0 0 5px rgba(155, 89, 182, 0.3);
+}
+
+/* ===== Discount Category Sections ===== */
+.discount-category-section {
+    margin-bottom: 20px;
+    padding: 15px;
+    border: 1px solid #ddd;
+    border-radius: 5px;
+    background-color: #fafafa;
+}
+
+.discount-category-section h5 {
+    color: #e74c3c;
+    font-weight: bold;
+    margin-bottom: 10px;
+    text-transform: uppercase;
+    font-size: 14px;
+}
+
+.discount-category-section .radio {
+    margin-left: 20px;
+    margin-bottom: 8px;
+}
+
+.discount-category-section .radio label {
+    font-size: 14px;
+    font-weight: normal;
+    cursor: pointer;
+}
+
+.discount-category-section .radio input[type="radio"] {
+    margin-right: 8px;
+    cursor: pointer;
+}
+
+/* Add Option Button */
+.add-discount-option-btn {
+    background-color: #27ae60;
+    border-color: #27ae60;
+    color: white;
+    font-size: 12px;
+    padding: 4px 10px;
+    margin-bottom: 10px;
+}
+
+.add-discount-option-btn:hover {
+    background-color: #229954;
+    border-color: #229954;
+}
+
+/* ===== Modal Footer Buttons ===== */
+#saveAffiliateDiscounts {
+    background-color: #9b59b6;
+    border-color: #9b59b6;
+    padding: 10px 30px;
+    font-weight: bold;
+}
+
+#saveAffiliateDiscounts:hover {
+    background-color: #8e44ad;
+    border-color: #8e44ad;
+}
+
+/* ===== POS Button ===== */
+.affiliate-discount-trigger {
+    margin-top: 10px;
+    margin-bottom: 10px;
+}
+
+#openAffiliateDiscountModal {
+    font-weight: bold;
+    font-size: 14px;
+    padding: 10px;
+    position: relative;
+}
+
+#activeDiscountBadge {
+    position: absolute;
+    top: 5px;
+    right: 10px;
+    background-color: #e74c3c;
+    color: white;
+    padding: 2px 6px;
+    border-radius: 10px;
+    font-size: 11px;
+}
+
+/* ===== Discount Breakdown Display ===== */
+#affiliate-discount-breakdown {
+    margin-top: 10px;
+    margin-bottom: 10px;
+    padding: 15px;
+    background-color: #ecf0f1;
+    border: 1px solid #bdc3c7;
+    border-radius: 4px;
+}
+
+#affiliate-discount-breakdown h5 {
+    margin-top: 0;
+    margin-bottom: 10px;
+    color: #2c3e50;
+    font-size: 14px;
+}
+
+#affiliate-discount-breakdown .table {
+    margin-bottom: 0;
+    font-size: 13px;
+}
+
+#affiliate-discount-breakdown .table td {
+    padding: 5px 8px;
+    border-top: 1px solid #d5d8dc;
+}
+
+#affiliate-discount-breakdown .table tr.info td {
+    background-color: #d6eaf8;
+    font-weight: bold;
+}
+
+/* ===== Admin Page Styles ===== */
+.nav-tabs-custom {
+    margin-bottom: 20px;
+}
+
+.nav-tabs-custom > .tab-content {
+    padding: 20px;
+}
+
+#optionModal .modal-body {
+    padding: 20px;
+}
+
+#optionModal .form-group {
+    margin-bottom: 15px;
+}
+
+#optionModal .form-group label {
+    font-weight: bold;
+    display: block;
+    margin-bottom: 5px;
+}
+
+/* ===== Responsive Styles ===== */
+@media (max-width: 768px) {
+    #affiliateDiscountModal .modal-dialog {
+        margin: 10px;
+    }
+
+    .discount-category-section {
+        padding: 10px;
+    }
+
+    .discount-category-section h5 {
+        font-size: 12px;
+    }
+
+    .discount-category-section .radio {
+        margin-left: 10px;
+    }
+}
+
+/* ===== Alert Styles ===== */
+.alert-info small {
+    display: block;
+    text-align: center;
+    color: #e74c3c;
+    font-weight: bold;
+    text-transform: uppercase;
+}
+
+/* ===== Options Table Styles ===== */
+.table-condensed {
+    font-size: 13px;
+}
+
+.table-condensed td,
+.table-condensed th {
+    padding: 6px;
+}
+
+/* ===== Loading State ===== */
+.loading-options {
+    text-align: center;
+    padding: 40px;
+    color: #7f8c8d;
+}
+
+.loading-options i {
+    font-size: 32px;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+/* ===== Empty State ===== */
+.empty-state {
+    text-align: center;
+    padding: 40px 20px;
+    color: #95a5a6;
+}
+
+.empty-state i {
+    font-size: 48px;
+    margin-bottom: 15px;
+    opacity: 0.5;
+}
+
+.empty-state p {
+    margin: 0;
+    font-size: 14px;
+}

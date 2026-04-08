@@ -1,0 +1,68 @@
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Node modules
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Composer
+vendor/
+composer.lock
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Log files
+*.log
+logs/
+
+# Cache and temporary files
+storage/
+bootstrap/cache/
+*.cache
+temp/
+tmp/
+
+# Backup files
+*.backup
+*.bak
+*.old
+
+# Build artifacts
+/public/build/
+/public/hot
+/public/storage
+/storage/*.key
+
+# Test coverage
+coverage/
+.nyc_output/
+
+# Package files
+*.tar.gz
+*.zip
+*.rar
+
+# Development files
+test-output/
+debug/
+
+# Module specific
+cellphone-backup-*/

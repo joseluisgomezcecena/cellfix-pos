@@ -1,0 +1,42 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__serena__list_dir",
+      "mcp__serena__check_onboarding_performed",
+      "mcp__serena__list_memories",
+      "mcp__serena__get_symbols_overview",
+      "mcp__serena__find_file",
+      "Bash(php:*)",
+      "mcp__serena__onboarding",
+      "mcp__serena__find_symbol",
+      "mcp__serena__write_memory",
+      "Bash(mysql:*)",
+      "Bash(test:*)",
+      "mcp__serena__search_for_pattern",
+      "mcp__serena__think_about_collected_information",
+      "mcp__serena__read_memory",
+      "Bash(cat:*)",
+      "Bash(systemctl list-units:*)",
+      "Bash(kill:*)",
+      "Bash(awk:*)",
+      "Bash(xargs kill:*)",
+      "Bash(chown:*)",
+      "Bash(sort:*)",
+      "Bash(node -c:*)",
+      "Bash(curl:*)",
+      "Bash(claude mcp add:*)",
+      "mcp__playwright__browser_navigate",
+      "mcp__playwright__browser_install",
+      "Bash(npx playwright install chrome)",
+      "mcp__playwright__browser_close",
+      "Bash(pkill:*)",
+      "mcp__serena__replace_symbol_body",
+      "Read(//www/server/panel/vhost/**)",
+      "Read(//www/server/**)",
+      "Bash(systemctl restart:*)",
+      "Bash(systemctl status:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
