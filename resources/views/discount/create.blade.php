@@ -37,8 +37,8 @@
         <div class="clearfix"></div>
         <div class="col-sm-6">
           <div class="form-group">
-            {!! Form::label('location_id', __('sale.location') . ':*') !!}
-              {!! Form::select('location_id', $locations, null, ['placeholder' => __('messages.please_select'), 'class' => 'form-control select2', 'required']); !!}
+            {!! Form::label('location_ids', __('sale.location') . ':*') !!}
+              {!! Form::select('location_ids[]', $locations, null, ['class' => 'form-control select2', 'required', 'multiple', 'id' => 'location_ids', 'style' => 'width: 100%;']); !!}
           </div>
         </div>
         <div class="col-md-6">

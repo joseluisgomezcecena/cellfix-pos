@@ -36,7 +36,8 @@
       "Bash(systemctl restart:*)",
       "Bash(systemctl status:*)",
       "Bash(grep -n ''\\\\''fillable'\\\\''\\\\|layaway_id\\\\|protected $fillable' c:/xampp/htdocs/pos.celfix.mx.dev/app/Transaction.php)",
-      "Bash(grep -n \"layaway_id\" c:/xampp/htdocs/pos.celfix.mx.dev/database/migrations/*.php)"
+      "Bash(grep -n \"layaway_id\" c:/xampp/htdocs/pos.celfix.mx.dev/database/migrations/*.php)",
+      "Bash(ls c:/xampp/htdocs/pos.celfix.mx.dev/database/migrations/*discount_locations*)"
     ],
     "deny": [],
     "ask": []

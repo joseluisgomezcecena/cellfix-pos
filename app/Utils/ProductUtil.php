@@ -1543,7 +1543,13 @@ class ProductUtil extends Util
 
         //Search if both category and brand matches
         $query = Discount::where('business_id', $business_id)
-                    ->where('location_id', $location_id)
+                    ->where(function ($q) use ($location_id) {
+                        $q->whereHas('locations', function ($sub) use ($location_id) {
+                            $sub->where('business_locations.id', $location_id);
+                        })
+                        // Backwards compatibility: also check old location_id column
+                        ->orWhere('location_id', $location_id);
+                    })
                     ->where('is_active', 1)
                     ->where('starts_at', '<=', $now)
                     ->where('ends_at', '>=', $now)

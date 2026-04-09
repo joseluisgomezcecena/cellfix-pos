@@ -22,4 +22,9 @@ class Discount extends Model
     {
         return $this->belongsToMany(\App\Variation::class, 'discount_variations', 'discount_id', 'variation_id');
     }
+
+    public function locations()
+    {
+        return $this->belongsToMany(\App\BusinessLocation::class, 'discount_locations', 'discount_id', 'location_id');
+    }
 }

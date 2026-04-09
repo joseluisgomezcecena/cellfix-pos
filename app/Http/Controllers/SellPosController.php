@@ -1216,6 +1216,11 @@ class SellPosController extends Controller
                     $input['transaction_date'] = $this->productUtil->uf_date($request->input('transaction_date'), true);
                 }
 
+                //If converting a quotation/draft to a final sale, force the transaction date to now
+                if ($status_before == 'draft' && $input['status'] == 'final') {
+                    $input['transaction_date'] = \Carbon::now()->toDateTimeString();
+                }
+
                 $input['commission_agent'] = !empty($request->input('commission_agent')) ? $request->input('commission_agent') : null;
                 if ($commsn_agnt_setting == 'logged_in_user') {
                     $input['commission_agent'] = $user_id;

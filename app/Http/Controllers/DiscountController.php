@@ -47,10 +47,9 @@ class DiscountController extends Controller
             $discounts = Discount::where('discounts.business_id', $business_id)
                         ->leftjoin('brands as b', 'discounts.brand_id', '=', 'b.id')
                         ->leftjoin('categories as c', 'discounts.category_id', '=', 'c.id')
-                        ->leftjoin('business_locations as l', 'discounts.location_id', '=', 'l.id')
                         ->select(['discounts.id', 'discounts.name', 'starts_at', 'ends_at',
-                            'priority', 'b.name as brand', 'c.name as category', 'l.name as location', 'discounts.is_active', 'discounts.discount_amount', 'discount_type', ])
-                        ->with(['variations', 'variations.product', 'variations.product_variation']);
+                            'priority', 'b.name as brand', 'c.name as category', 'discounts.is_active', 'discounts.discount_amount', 'discount_type', ])
+                        ->with(['variations', 'variations.product', 'variations.product_variation', 'locations']);
 
             return Datatables::of($discounts)
                 ->addColumn(
@@ -66,6 +65,11 @@ class DiscountController extends Controller
                 )
                 ->addColumn('row_select', function ($row) {
                     return  '<input type="checkbox" class="row-select" value="'.$row->id.'">';
+                })
+                ->addColumn('location', function ($row) {
+                    $location_names = $row->locations->pluck('name')->toArray();
+
+                    return implode(', ', $location_names);
                 })
                 ->addColumn('products', function ($row) {
                     $products = [];
@@ -140,12 +144,13 @@ class DiscountController extends Controller
 
         try {
             $input = $request->only(['name', 'brand_id', 'category_id',
-                'location_id', 'priority', 'discount_type', 'discount_amount', 'spg', ]);
+                'priority', 'discount_type', 'discount_amount', 'spg', ]);
 
             $business_id = $request->session()->get('user.business_id');
             $input['business_id'] = $business_id;
 
             $variation_ids = $request->input('variation_ids');
+            $location_ids = $request->input('location_ids', []);
 
             if (! empty($variation_ids)) {
                 unset($input['brand_id']);
@@ -161,6 +166,10 @@ class DiscountController extends Controller
             }
 
             $discount = Discount::create($input);
+
+            if (! empty($location_ids)) {
+                $discount->locations()->sync($location_ids);
+            }
 
             if (! empty($variation_ids)) {
                 $discount->variations()->sync($variation_ids);
@@ -239,7 +248,7 @@ class DiscountController extends Controller
         if (request()->ajax()) {
             try {
                 $input = $request->only(['name', 'brand_id', 'category_id',
-                    'location_id', 'priority', 'discount_type', 'discount_amount', 'spg', ]);
+                    'priority', 'discount_type', 'discount_amount', 'spg', ]);
 
                 $business_id = $request->session()->get('user.business_id');
 
@@ -252,6 +261,7 @@ class DiscountController extends Controller
                 }
 
                 $variation_ids = $request->input('variation_ids');
+                $location_ids = $request->input('location_ids', []);
 
                 if (! empty($variation_ids)) {
                     unset($input['brand_id']);
@@ -263,6 +273,7 @@ class DiscountController extends Controller
 
                 $discount->update($input);
 
+                $discount->locations()->sync($location_ids);
                 $discount->variations()->sync($variation_ids);
 
                 $output = ['success' => true,
