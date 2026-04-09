@@ -246,7 +246,7 @@ class SellPosController extends Controller
 
         $default_datetime = $this->businessUtil->format_date('now', true);
 
-        $featured_products = !empty($default_location) ? $default_location->getFeaturedProducts() : [];
+        $featured_products = !empty($default_location) ? $this->getTopSellingProducts($default_location) : [];
 
         //pos screen view from module
         $pos_module_data = $this->moduleUtil->getModuleData('get_pos_screen_view', ['sub_type' => $sub_type, 'job_sheet_id' => request()->get('job_sheet_id')]);
@@ -1022,7 +1022,7 @@ class SellPosController extends Controller
             }
         }
 
-        $featured_products = $business_location->getFeaturedProducts();
+        $featured_products = $this->getTopSellingProducts($business_location);
 
         $payment_lines = $this->transactionUtil->getPaymentDetails($id);
         //If no payment lines found then add dummy payment line.
@@ -2748,13 +2748,54 @@ class SellPosController extends Controller
     public function getFeaturedProducts($id)
     {
         $location = BusinessLocation::findOrFail($id);
-        $featured_products = $location->getFeaturedProducts();
+        $featured_products = $this->getTopSellingProducts($location);
 
-        if (!empty($featured_products)) {
-            return view('sale_pos.partials.featured_products')->with(compact('featured_products'));
-        } else {
+        if (empty($featured_products) || $featured_products->isEmpty()) {
             return '';
         }
+
+        return view('sale_pos.partials.featured_products')->with(compact('featured_products'));
+    }
+
+    /**
+     * Returns the top 24 best-selling variations for a given location.
+     *
+     * @param  \App\BusinessLocation  $location
+     * @return \Illuminate\Database\Eloquent\Collection
+     */
+    private function getTopSellingProducts($location)
+    {
+        $business_id = $location->business_id;
+
+        $top_variation_ids = \DB::table('transaction_sell_lines as tsl')
+            ->join('transactions as t', 't.id', '=', 'tsl.transaction_id')
+            ->join('variations as v', 'v.id', '=', 'tsl.variation_id')
+            ->join('products as p', 'p.id', '=', 'v.product_id')
+            ->where('t.business_id', $business_id)
+            ->where('t.location_id', $location->id)
+            ->where('t.type', 'sell')
+            ->where('t.status', 'final')
+            ->where('p.not_for_selling', 0)
+            ->whereNull('v.deleted_at')
+            ->groupBy('tsl.variation_id')
+            ->orderByRaw('SUM(tsl.quantity) DESC')
+            ->limit(24)
+            ->pluck('tsl.variation_id')
+            ->toArray();
+
+        if (empty($top_variation_ids)) {
+            return collect();
+        }
+
+        return \App\Variation::whereIn('variations.id', $top_variation_ids)
+            ->join('product_locations as pl', 'pl.product_id', '=', 'variations.product_id')
+            ->join('products as p', 'p.id', '=', 'variations.product_id')
+            ->where('p.not_for_selling', 0)
+            ->where('pl.location_id', $location->id)
+            ->with(['product_variation', 'product', 'media'])
+            ->select('variations.*')
+            ->orderByRaw('FIELD(variations.id, ' . implode(',', $top_variation_ids) . ')')
+            ->get();
     }
 
     /**
