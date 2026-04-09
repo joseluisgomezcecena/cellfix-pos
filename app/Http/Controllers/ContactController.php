@@ -1671,6 +1671,7 @@ class ContactController extends Controller
         $business_id = $request->session()->get('user.business_id');
 
         $mobile_number = $request->input('mobile_number');
+        $name = trim((string) $request->input('name'));
 
         $query = Contact::where('business_id', $business_id)
                         ->where('mobile', 'like', "%{$mobile_number}");
@@ -1681,9 +1682,22 @@ class ContactController extends Controller
 
         $contacts = $query->pluck('name')->toArray();
 
+        // Check if there's an exact match on name as well (case-insensitive)
+        $is_exact_match = false;
+        if (! empty($name) && ! empty($contacts)) {
+            foreach ($contacts as $existing_name) {
+                if (mb_strtolower(trim($existing_name)) === mb_strtolower($name)) {
+                    $is_exact_match = true;
+                    break;
+                }
+            }
+        }
+
         return [
             'is_mobile_exists' => ! empty($contacts),
+            'is_exact_match' => $is_exact_match,
             'msg' => __('lang_v1.mobile_already_registered', ['contacts' => implode(', ', $contacts), 'mobile' => $mobile_number]),
+            'exact_match_msg' => $is_exact_match ? __('lang_v1.contact_already_registered', ['name' => $name, 'mobile' => $mobile_number]) : '',
         ];
     }
 

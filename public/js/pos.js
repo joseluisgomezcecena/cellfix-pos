@@ -1035,32 +1035,19 @@ $(document).ready(function() {
             url: base_path + '/check-mobile',
             dataType: 'json',
             data: {
-                contact_id: function() {
-                    return $('#hidden_id').val();
-                },
-                mobile_number: function() {
-                    return $('#mobile').val();
-                },
+                contact_id: $('#hidden_id').val(),
+                mobile_number: $('#mobile').val(),
+                name: $(form).find('input[name="name"]').val(),
             },
             success: function(result) {
                 if (result.is_mobile_exists == true) {
-                    swal({
-                        title: LANG.sure,
-                        text: result.msg,
-                        icon: 'warning',
-                        buttons: true,
-                        dangerMode: true,
-                    }).then(willContinue => {
-                        if (willContinue) {
-                            submitQuickContactForm(form);
-                        } else {
-                            $('#mobile').select();
-                        }
-                    });
-                    
-                } else {
-                    submitQuickContactForm(form);
+                    toastr.error(result.msg);
+                    $(form).find('button[type="submit"]').removeAttr('disabled');
+                    $('#mobile').select();
+                    return;
                 }
+
+                submitQuickContactForm(form);
             },
         });
     }

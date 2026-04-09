@@ -1375,5 +1375,8 @@ return [
     'version' => 'Versión',
     'uninstall' => 'Desinstalar',
     'module_new_version' => 'Hay una nueva versión de :module disponible <a href=":link" class="tw-dw-btn tw-dw-btn-info tw-pl-2">Actualizar</a>',
+    'mobile_already_registered' => ':mobile ya está registrado para :contacts',
+    'contact_already_registered' => 'El cliente ":name" con el teléfono :mobile ya está registrado',
+    'tax_number_already_registered' => ':tax_number ya está registrado para :contacts',
 ];
 

@@ -1423,6 +1423,8 @@ return [
     'partner_ledger_summary' => 'Resumen del Libro Mayor del Socio',
     'tax_number_already_exists' => 'Este número de impuesto ya existe',
     'tax_number_already_registered' => 'Número de impuesto :tax_number ya registrado para :contacts',
+    'mobile_already_registered' => ':mobile ya está registrado para :contacts',
+    'contact_already_registered' => 'El cliente ":name" con el teléfono :mobile ya está registrado',
     'invoice_synced_to_zatca_cannot_be_deleted' => 'Esta factura se ha sincronizado correctamente con ZATCA y no se puede eliminar.',
     'invoice_synced_to_zatca_cannot_be_edited' => 'Esta factura se ha sincronizado correctamente con ZATCA y no se puede editar.',
 ];
