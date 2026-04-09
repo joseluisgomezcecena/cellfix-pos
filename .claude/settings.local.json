@@ -34,7 +34,9 @@
       "Read(//www/server/panel/vhost/**)",
       "Read(//www/server/**)",
       "Bash(systemctl restart:*)",
-      "Bash(systemctl status:*)"
+      "Bash(systemctl status:*)",
+      "Bash(grep -n ''\\\\''fillable'\\\\''\\\\|layaway_id\\\\|protected $fillable' c:/xampp/htdocs/pos.celfix.mx.dev/app/Transaction.php)",
+      "Bash(grep -n \"layaway_id\" c:/xampp/htdocs/pos.celfix.mx.dev/database/migrations/*.php)"
     ],
     "deny": [],
     "ask": []

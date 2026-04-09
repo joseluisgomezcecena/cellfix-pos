@@ -187,11 +187,13 @@ class LayawayController extends Controller
             abort(403, 'Unauthorized action.');
         }
 
+        $date_format = session('business.date_format', config('constants.default_date_format'));
+
         $request->validate([
             'contact_id' => 'required|exists:contacts,id',
             'business_location_id' => 'required|exists:business_locations,id',
-            'payment_deadline' => 'required|date_format:d/m/Y|after:today',
-            'down_payment_percentage' => 'required|numeric|min:0|max:100',
+            'payment_deadline' => 'required|date_format:' . $date_format . '|after:today',
+            'down_payment_amount' => 'required|numeric|min:0',
             'products' => 'required|array|min:1',
             'products.*.product_id' => 'required|exists:products,id',
             'products.*.variation_id' => 'nullable|exists:variations,id',
@@ -275,11 +277,13 @@ class LayawayController extends Controller
                 ];
             }
 
-            $down_payment_amount = ($total_amount * $request->down_payment_percentage) / 100;
+            $down_payment_amount = min((float)$request->down_payment_amount, $total_amount);
+            $down_payment_percentage = $total_amount > 0 ? ($down_payment_amount / $total_amount) * 100 : 0;
             $balance_due = $total_amount - $down_payment_amount;
 
-            // Convert date from d/m/Y to Y-m-d format for database storage
-            $payment_deadline = \Carbon\Carbon::createFromFormat('d/m/Y', $request->payment_deadline)->format('Y-m-d');
+            // Convert date from business format to Y-m-d for database storage
+            $date_format = session('business.date_format', config('constants.default_date_format'));
+            $payment_deadline = \Carbon\Carbon::createFromFormat($date_format, $request->payment_deadline)->format('Y-m-d');
 
             $layaway = Layaway::create([
                 'business_id' => $business_id,
@@ -288,7 +292,7 @@ class LayawayController extends Controller
                 'created_by' => $user_id,
                 'layaway_number' => Layaway::generateLayawayNumber($business_id),
                 'total_amount' => $total_amount,
-                'down_payment_percentage' => $request->down_payment_percentage,
+                'down_payment_percentage' => $down_payment_percentage,
                 'down_payment_amount' => $down_payment_amount,
                 'balance_due' => $balance_due,
                 'payment_deadline' => $payment_deadline,
@@ -482,9 +486,11 @@ class LayawayController extends Controller
             abort(403, 'Unauthorized action.');
         }
 
+        $date_format = session('business.date_format', config('constants.default_date_format'));
+
         $request->validate([
-            'payment_deadline' => 'required|date_format:d/m/Y|after:today',
-            'down_payment_percentage' => 'required|numeric|min:0|max:100',
+            'payment_deadline' => 'required|date_format:' . $date_format . '|after:today',
+            'down_payment_amount' => 'required|numeric|min:0',
             'notes' => 'nullable|string'
         ]);
 
@@ -497,12 +503,13 @@ class LayawayController extends Controller
                 throw new \Exception('Cannot edit this layaway.');
             }
 
-            // Convert date format from d/m/Y to Y-m-d
-            $payment_deadline = \Carbon\Carbon::createFromFormat('d/m/Y', $request->payment_deadline)->format('Y-m-d');
+            // Convert date format from business format to Y-m-d
+            $date_format = session('business.date_format', config('constants.default_date_format'));
+            $payment_deadline = \Carbon\Carbon::createFromFormat($date_format, $request->payment_deadline)->format('Y-m-d');
 
-            // Recalculate amounts if down payment percentage changed
-            $down_payment_percentage = $request->down_payment_percentage;
-            $down_payment_amount = ($layaway->total_amount * $down_payment_percentage) / 100;
+            // Recalculate amounts from the entered fixed amount
+            $down_payment_amount = min((float)$request->down_payment_amount, $layaway->total_amount);
+            $down_payment_percentage = $layaway->total_amount > 0 ? ($down_payment_amount / $layaway->total_amount) * 100 : 0;
             $balance_due = $layaway->total_amount - $down_payment_amount;
 
             $layaway->update([

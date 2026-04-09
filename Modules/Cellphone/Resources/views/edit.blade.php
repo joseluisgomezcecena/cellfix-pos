@@ -305,7 +305,7 @@
                                 <span class="input-group-addon">
                                     <i class="fa fa-money"></i>
                                 </span>
-                                {!! Form::text('purchase_price', $variation->default_purchase_price ?? 0, ['class' => 'form-control input_number', 'placeholder' => '0.00']) !!}
+                                {!! Form::text('purchase_price', number_format(floatval($variation->default_purchase_price ?? 0), 2, '.', ''), ['class' => 'form-control input_number', 'placeholder' => '0.00']) !!}
                             </div>
                         </div>
                     </div>
@@ -317,7 +317,7 @@
                                 <span class="input-group-addon">
                                     <i class="fa fa-money"></i>
                                 </span>
-                                {!! Form::text('sell_price', $variation->default_sell_price ?? 0, ['class' => 'form-control input_number', 'placeholder' => '0.00']) !!}
+                                {!! Form::text('sell_price', number_format(floatval($variation->default_sell_price ?? 0), 2, '.', ''), ['class' => 'form-control input_number', 'placeholder' => '0.00']) !!}
                             </div>
                         </div>
                     </div>
@@ -329,7 +329,7 @@
                                 <span class="input-group-addon">
                                     <i class="fa fa-money"></i>
                                 </span>
-                                {!! Form::text('sell_price_inc_tax', $variation->sell_price_inc_tax ?? 0, ['class' => 'form-control', 'placeholder' => '0.00', 'readonly']) !!}
+                                {!! Form::text('sell_price_inc_tax', number_format(floatval($variation->sell_price_inc_tax ?? 0), 2, '.', ''), ['class' => 'form-control', 'placeholder' => '0.00', 'readonly']) !!}
                             </div>
                             <span class="help-block">@lang('cellphone::lang.auto_calculated_tax')</span>
                         </div>
@@ -342,7 +342,7 @@
                                 <span class="input-group-addon">
                                     <i class="fa fa-percent"></i>
                                 </span>
-                                {!! Form::text('profit_percent', $variation->profit_percent ?? 0, ['class' => 'form-control input_number', 'placeholder' => '0']) !!}
+                                {!! Form::text('profit_percent', number_format(floatval($variation->profit_percent ?? 0), 2, '.', ''), ['class' => 'form-control input_number', 'placeholder' => '0']) !!}
                             </div>
                         </div>
                     </div>

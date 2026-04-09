@@ -72,13 +72,14 @@
                 <div class="row">
                     <div class="col-sm-4">
                         <div class="form-group">
-                            {!! Form::label('down_payment_percentage', __('layaway::lang.down_payment_percentage') . ':*') !!}
+                            {!! Form::label('down_payment_amount', __('layaway::lang.down_payment') . ':*') !!}
                             <div class="input-group">
                                 <span class="input-group-addon">
-                                    <i class="fa fa-percent"></i>
+                                    <i class="fa fa-money"></i>
                                 </span>
-                                {!! Form::number('down_payment_percentage', 20, ['class' => 'form-control', 'placeholder' => __('layaway::lang.down_payment_percentage'), 'required', 'min' => '0', 'max' => '100', 'step' => '0.01']) !!}
+                                    {!! Form::number('down_payment_amount', null, ['class' => 'form-control', 'placeholder' => __('layaway::lang.down_payment_amount'), 'required', 'min' => '0', 'step' => '0.01', 'id' => 'down_payment_amount']) !!}
                             </div>
+                            <small id="down_payment_percentage_hint" class="text-muted"></small>
                         </div>
                     </div>
 
@@ -394,8 +395,15 @@ $(document).ready(function(){
         calculateLayawayTotal();
     });
 
-    // Down payment percentage change
-    $(document).on('change keyup', '#down_payment_percentage', function() {
+    // Alert if user focuses down payment before adding products
+    $(document).on('focus', '#down_payment_amount', function() {
+        if ($('#layaway_table_body tr').length == 0) {
+            toastr.warning("@lang('layaway::lang.select_products_first')");
+        }
+    });
+
+    // Down payment amount change
+    $(document).on('change keyup', '#down_payment_amount', function() {
         calculateLayawayTotal();
     });
 
@@ -419,9 +427,16 @@ $(document).ready(function(){
             total_amount += parseFloat($(this).val()) || 0;
         });
 
-        var down_payment_percentage = parseFloat($('#down_payment_percentage').val()) || 0;
-        var down_payment_amount = (total_amount * down_payment_percentage) / 100;
+        var down_payment_amount = parseFloat($('#down_payment_amount').val()) || 0;
         var balance_due = total_amount - down_payment_amount;
+
+        // Show percentage hint below the field
+        if (total_amount > 0 && down_payment_amount > 0) {
+            var pct = (down_payment_amount / total_amount * 100).toFixed(1);
+            $('#down_payment_percentage_hint').text('(' + pct + '% del total)');
+        } else {
+            $('#down_payment_percentage_hint').text('');
+        }
 
         $('#layaway_total_amount').text(__currency_trans_from_en(total_amount, true));
         $('#layaway_down_payment').text(__currency_trans_from_en(down_payment_amount, true));
@@ -438,8 +453,8 @@ $(document).ready(function(){
             return false;
         }
 
-        var down_payment = parseFloat($('#down_payment_percentage').val()) || 0;
-        if (down_payment < 0 || down_payment > 100) {
+        var down_payment = parseFloat($('#down_payment_amount').val()) || 0;
+        if (down_payment < 0) {
             toastr.error("@lang('layaway::lang.invalid_down_payment')");
             e.preventDefault();
             return false;
