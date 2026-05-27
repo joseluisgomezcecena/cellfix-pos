@@ -37,7 +37,17 @@
       "Bash(systemctl status:*)",
       "Bash(grep -n ''\\\\''fillable'\\\\''\\\\|layaway_id\\\\|protected $fillable' c:/xampp/htdocs/pos.celfix.mx.dev/app/Transaction.php)",
       "Bash(grep -n \"layaway_id\" c:/xampp/htdocs/pos.celfix.mx.dev/database/migrations/*.php)",
-      "Bash(ls c:/xampp/htdocs/pos.celfix.mx.dev/database/migrations/*discount_locations*)"
+      "Bash(ls c:/xampp/htdocs/pos.celfix.mx.dev/database/migrations/*discount_locations*)",
+      "PowerShell($f = \"C:\\\\Users\\\\Jose Luis\\\\Downloads\\\\pos_celfix_mx_2026-05-21_02-45-14_mysql_data_PlfFs.sql\\\\pos_celfix_mx_2026-05-21_02-45-14_mysql_data_PlfFs.sql\"; if \\(Test-Path $f\\) { $size = \\(Get-Item $f\\).Length/1MB; Write-Output \\(\"Size: {0:N1} MB\" -f $size\\) } else { Write-Output \"FILE NOT FOUND\" })",
+      "PowerShell(& \"C:\\\\xampp\\\\mysql\\\\bin\\\\mysql.exe\" --version)",
+      "PowerShell(& \"C:\\\\xampp\\\\mysql\\\\bin\\\\mysql.exe\" -u root -proot -e \"SELECT VERSION\\(\\);\")",
+      "PowerShell(Get-CimInstance Win32_Process -Filter \"name like '%mysqld%'\")",
+      "PowerShell($svc = Get-CimInstance Win32_Service -Filter \"Name='MySQL95'\"; Write-Output $svc.PathName)",
+      "PowerShell($mysql = \"C:\\\\Users\\\\Jose Luis\\\\Downloads\\\\mysql-enterprise-9.5.0_winx64_bundle\\\\mysql-commercial-9.5.0-winx64\\\\mysql-commercial-9.5.0-winx64\\\\bin\\\\mysql.exe\"; if \\(Test-Path $mysql\\) { Write-Output \"client OK\"; & $mysql -u root -proot -e \"SELECT VERSION\\(\\); SHOW DATABASES;\" } else { Write-Output \"client NOT found\" })",
+      "Bash(findstr /V \"Warning imagick openssl\")",
+      "Bash(cat _audit_import_progress.log)",
+      "Bash(head -5 _audit_import_errors.log)",
+      "Bash(echo \"exit: $?\")"
     ],
     "deny": [],
     "ask": []

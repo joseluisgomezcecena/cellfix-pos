@@ -1,0 +1,204 @@
+-- ====================================================================
+-- DESPLIEGUE A PRODUCCION - Celfix POS (feature/pos-improved)
+-- Generado: 2026-05-27 02:39
+-- Aplica en phpMyAdmin sobre la base de PRODUCCION. Hacer BACKUP antes.
+-- ====================================================================
+
+SET FOREIGN_KEY_CHECKS=0;
+
+-- ============ TABLAS NUEVAS ============
+
+CREATE TABLE IF NOT EXISTS `card_terminals` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `business_id` int unsigned NOT NULL,
+  `name` varchar(191) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `bank` varchar(191) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `account_number` varchar(191) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `is_active` tinyint(1) NOT NULL DEFAULT '1',
+  `created_at` timestamp NULL DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `card_terminals_business_id_index` (`business_id`),
+  CONSTRAINT `card_terminals_business_id_foreign` FOREIGN KEY (`business_id`) REFERENCES `business` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `daily_cuts` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `business_id` int unsigned NOT NULL,
+  `location_id` int unsigned NOT NULL,
+  `cut_date` date NOT NULL,
+  `total_sales` decimal(22,4) NOT NULL DEFAULT '0.0000',
+  `total_cash` decimal(22,4) NOT NULL DEFAULT '0.0000',
+  `total_card` decimal(22,4) NOT NULL DEFAULT '0.0000',
+  `total_transfer` decimal(22,4) NOT NULL DEFAULT '0.0000',
+  `total_cheque` decimal(22,4) NOT NULL DEFAULT '0.0000',
+  `total_other` decimal(22,4) NOT NULL DEFAULT '0.0000',
+  `total_expenses` decimal(22,4) NOT NULL DEFAULT '0.0000',
+  `total_transactions` int unsigned NOT NULL DEFAULT '0',
+  `summary` json DEFAULT NULL,
+  `generated_at` timestamp NULL DEFAULT NULL,
+  `generated_by` int unsigned DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `unique_daily_cut` (`business_id`,`location_id`,`cut_date`),
+  KEY `daily_cuts_location_id_foreign` (`location_id`),
+  KEY `daily_cuts_cut_date_index` (`cut_date`),
+  CONSTRAINT `daily_cuts_business_id_foreign` FOREIGN KEY (`business_id`) REFERENCES `business` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `daily_cuts_location_id_foreign` FOREIGN KEY (`location_id`) REFERENCES `business_locations` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `discount_locations` (
+  `discount_id` int unsigned NOT NULL,
+  `location_id` int unsigned NOT NULL,
+  PRIMARY KEY (`discount_id`,`location_id`),
+  KEY `discount_locations_location_id_foreign` (`location_id`),
+  CONSTRAINT `discount_locations_discount_id_foreign` FOREIGN KEY (`discount_id`) REFERENCES `discounts` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `discount_locations_location_id_foreign` FOREIGN KEY (`location_id`) REFERENCES `business_locations` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `repair_product_commissions` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `business_id` int unsigned NOT NULL,
+  `product_id` int unsigned NOT NULL,
+  `commission_amount` decimal(12,2) NOT NULL DEFAULT '0.00',
+  `created_at` timestamp NULL DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `unique_repair_commission` (`business_id`,`product_id`),
+  KEY `repair_product_commissions_product_id_index` (`product_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `sales_goals` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `business_id` int unsigned NOT NULL,
+  `location_id` int unsigned NOT NULL DEFAULT '0',
+  `metric` varchar(191) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'equipos_weekly',
+  `target_qty` int unsigned NOT NULL DEFAULT '0',
+  `target_amount` decimal(22,4) NOT NULL DEFAULT '0.0000',
+  `created_at` timestamp NULL DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `unique_goal` (`business_id`,`location_id`,`metric`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `stock_corrections` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `business_id` int unsigned NOT NULL,
+  `location_id` int unsigned NOT NULL,
+  `product_id` int unsigned NOT NULL,
+  `variation_id` int unsigned NOT NULL,
+  `type` enum('add','deduct') COLLATE utf8mb4_unicode_ci NOT NULL,
+  `quantity` decimal(22,4) NOT NULL,
+  `reason` varchar(191) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `qty_before` decimal(22,4) DEFAULT NULL,
+  `qty_after` decimal(22,4) DEFAULT NULL,
+  `note` text COLLATE utf8mb4_unicode_ci,
+  `created_by` int unsigned DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `stock_corrections_business_id_location_id_index` (`business_id`,`location_id`),
+  KEY `stock_corrections_product_id_index` (`product_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `technicians` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `business_id` int unsigned NOT NULL,
+  `name` varchar(191) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `phone` varchar(191) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `email` varchar(191) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `notes` text COLLATE utf8mb4_unicode_ci,
+  `commission_per_repair` decimal(12,2) NOT NULL DEFAULT '0.00',
+  `is_active` tinyint(1) NOT NULL DEFAULT '1',
+  `created_at` timestamp NULL DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `technicians_business_id_is_active_index` (`business_id`,`is_active`),
+  CONSTRAINT `technicians_business_id_foreign` FOREIGN KEY (`business_id`) REFERENCES `business` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `technician_locations` (
+  `technician_id` bigint unsigned NOT NULL,
+  `location_id` int unsigned NOT NULL,
+  PRIMARY KEY (`technician_id`,`location_id`),
+  KEY `technician_locations_location_id_foreign` (`location_id`),
+  CONSTRAINT `technician_locations_location_id_foreign` FOREIGN KEY (`location_id`) REFERENCES `business_locations` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `technician_locations_technician_id_foreign` FOREIGN KEY (`technician_id`) REFERENCES `technicians` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `vendor_commission_targets` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `business_id` int unsigned NOT NULL,
+  `user_id` int unsigned NOT NULL,
+  `brand_id` int unsigned NOT NULL,
+  `meta_units` int unsigned NOT NULL DEFAULT '0',
+  `commission_per_unit` decimal(12,2) NOT NULL DEFAULT '0.00',
+  `created_at` timestamp NULL DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `unique_target_per_user_brand` (`user_id`,`brand_id`),
+  KEY `vendor_commission_targets_business_id_foreign` (`business_id`),
+  KEY `vendor_commission_targets_brand_id_foreign` (`brand_id`),
+  CONSTRAINT `vendor_commission_targets_brand_id_foreign` FOREIGN KEY (`brand_id`) REFERENCES `brands` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `vendor_commission_targets_business_id_foreign` FOREIGN KEY (`business_id`) REFERENCES `business` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `vendor_commission_targets_user_id_foreign` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ============ COLUMNAS NUEVAS EN TABLAS EXISTENTES ============
+
+-- columna business.cash_exchange_rate (solo si no existe)
+SET @e := (SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'business' AND column_name = 'cash_exchange_rate');
+SET @s := IF(@e = 0, 'ALTER TABLE `business` ADD COLUMN `cash_exchange_rate` decimal(10,4) NOT NULL DEFAULT ''18.0000''', 'DO 1');
+PREPARE st FROM @s;
+EXECUTE st;
+DEALLOCATE PREPARE st;
+
+-- columna products.reward_points (solo si no existe)
+SET @e := (SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'products' AND column_name = 'reward_points');
+SET @s := IF(@e = 0, 'ALTER TABLE `products` ADD COLUMN `reward_points` int NULL', 'DO 1');
+PREPARE st FROM @s;
+EXECUTE st;
+DEALLOCATE PREPARE st;
+
+-- columna transaction_payments.card_terminal_id (solo si no existe)
+SET @e := (SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'transaction_payments' AND column_name = 'card_terminal_id');
+SET @s := IF(@e = 0, 'ALTER TABLE `transaction_payments` ADD COLUMN `card_terminal_id` bigint unsigned NULL', 'DO 1');
+PREPARE st FROM @s;
+EXECUTE st;
+DEALLOCATE PREPARE st;
+
+-- columna transaction_payments.denomination_breakdown (solo si no existe)
+SET @e := (SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'transaction_payments' AND column_name = 'denomination_breakdown');
+SET @s := IF(@e = 0, 'ALTER TABLE `transaction_payments` ADD COLUMN `denomination_breakdown` json NULL', 'DO 1');
+PREPARE st FROM @s;
+EXECUTE st;
+DEALLOCATE PREPARE st;
+
+-- columna transaction_sell_lines.technician_id (solo si no existe)
+SET @e := (SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'transaction_sell_lines' AND column_name = 'technician_id');
+SET @s := IF(@e = 0, 'ALTER TABLE `transaction_sell_lines` ADD COLUMN `technician_id` bigint unsigned NULL', 'DO 1');
+PREPARE st FROM @s;
+EXECUTE st;
+DEALLOCATE PREPARE st;
+
+-- columna transaction_sell_lines.repair_entry_date (solo si no existe)
+SET @e := (SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'transaction_sell_lines' AND column_name = 'repair_entry_date');
+SET @s := IF(@e = 0, 'ALTER TABLE `transaction_sell_lines` ADD COLUMN `repair_entry_date` date NULL', 'DO 1');
+PREPARE st FROM @s;
+EXECUTE st;
+DEALLOCATE PREPARE st;
+
+-- columna transaction_sell_lines.repair_anticipo (solo si no existe)
+SET @e := (SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'transaction_sell_lines' AND column_name = 'repair_anticipo');
+SET @s := IF(@e = 0, 'ALTER TABLE `transaction_sell_lines` ADD COLUMN `repair_anticipo` decimal(22,4) NULL', 'DO 1');
+PREPARE st FROM @s;
+EXECUTE st;
+DEALLOCATE PREPARE st;
+
+-- ============ LIMPIEZA DE DATOS (marcas con formula de Excel) ============
+DELETE FROM `brands`
+ WHERE `name` LIKE '=%'
+   AND `id` NOT IN (SELECT brand_id FROM (SELECT DISTINCT brand_id FROM products WHERE brand_id IS NOT NULL) x);
+
+SET FOREIGN_KEY_CHECKS=1;

@@ -5,16 +5,20 @@
 			<div class="modal-header">
 				<button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
 				<h4 class="modal-title">
-					@if($is_discount_enabled)
-						@lang('sale.discount')
-					@endif
-					@if($is_rp_enabled)
-						{{session('business.rp_name')}}
-					@endif
+					<span class="modal-title-discount @if(!$is_discount_enabled) hide @endif">
+						@if($is_discount_enabled)
+							@lang('sale.discount')
+						@endif
+					</span>
+					<span class="modal-title-rp @if(!$is_rp_enabled) hide @endif">
+						@if($is_rp_enabled)
+							{{session('business.rp_name')}}
+						@endif
+					</span>
 				</h4>
 			</div>
 			<div class="modal-body">
-				<div class="row @if(!$is_discount_enabled) hide @endif">
+				<div class="row discount-section @if(!$is_discount_enabled) hide @endif">
 					<div class="col-md-12">
 						<h4 class="modal-title">@lang('sale.edit_discount'):</h4>
 					</div>
@@ -48,7 +52,7 @@
 				    </div>
 				</div>
 				<br>
-				<div class="row @if(!$is_rp_enabled) hide @endif">
+				<div class="row rp-section @if(!$is_rp_enabled) hide @endif">
 					<div class="well well-sm bg-light-gray col-md-12">
 					<div class="col-md-12">
 						<h4 class="modal-title">{{session('business.rp_name')}}:</h4>

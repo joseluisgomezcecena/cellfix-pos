@@ -234,6 +234,12 @@
                 } else {
                   $total_paid += $payment_line->amount;
                 }
+                $denomination_breakdown = null;
+                if (!empty($payment_line->denomination_breakdown)) {
+                    $denomination_breakdown = is_array($payment_line->denomination_breakdown)
+                        ? $payment_line->denomination_breakdown
+                        : json_decode($payment_line->denomination_breakdown, true);
+                }
               @endphp
               <tr>
                 <td>{{ $loop->iteration }}</td>
@@ -241,19 +247,114 @@
                 <td>{{ $payment_line->payment_ref_no }}</td>
                 <td><span class="display_currency" data-currency_symbol="true">{{ $payment_line->amount }}</span></td>
                 <td>
-                  {{ $payment_types[$payment_line->method] ?? $payment_line->method }}
+                  @php
+                    $method_label = $payment_types[$payment_line->method] ?? $payment_line->method;
+                    if ($payment_line->method == 'card' && !empty($payment_line->card_type)) {
+                        $card_type_labels = [
+                            'debit' => __('lang_v1.debit_card'),
+                            'credit' => __('lang_v1.credit_card'),
+                            'amex' => __('lang_v1.american_express'),
+                        ];
+                        $method_label = $card_type_labels[$payment_line->card_type] ?? $method_label;
+                    }
+                    $terminal_name = null;
+                    if ($payment_line->method == 'card' && !empty($payment_line->card_terminal_id)) {
+                        $terminal_name = \App\CardTerminal::where('id', $payment_line->card_terminal_id)->value('name');
+                    }
+                  @endphp
+                  {{ $method_label }}
+                  @if(!empty($terminal_name))
+                    <br/>
+                    <small class="text-muted"><i class="fas fa-cash-register"></i> {{ $terminal_name }}</small>
+                  @endif
                   @if($payment_line->is_return == 1)
                     <br/>
                     ( {{ __('lang_v1.change_return') }} )
                   @endif
                 </td>
-                <td>@if($payment_line->note) 
+                <td>@if($payment_line->note)
                   {{ ucfirst($payment_line->note) }}
                   @else
                   --
                   @endif
                 </td>
               </tr>
+              @if($payment_line->method == 'cash' && !empty($denomination_breakdown))
+                @php
+                  // Detect format: new (nested mxn/usd) vs old (flat keys)
+                  $is_new_format = isset($denomination_breakdown['mxn']) || isset($denomination_breakdown['usd']);
+                  $mxn_bd = $is_new_format ? ($denomination_breakdown['mxn'] ?? []) : $denomination_breakdown;
+                  $usd_bd = $is_new_format ? ($denomination_breakdown['usd'] ?? []) : [];
+                  $exchange_rate = $denomination_breakdown['exchange_rate'] ?? null;
+                @endphp
+                <tr>
+                  <td colspan="6" style="background-color: #f9f9f9; padding-left: 30px;">
+                    <strong>{{ __('lang_v1.cash_denominations') }}:</strong>
+                    @if($exchange_rate)
+                      <small class="text-muted">— @lang('lang_v1.exchange_rate'): {{ $exchange_rate }}</small>
+                    @endif
+                    <div class="row" style="margin-top: 8px;">
+                      @if(!empty($mxn_bd))
+                        <div class="col-md-6">
+                          <strong>PESOS (MXN)</strong>
+                          <table class="table table-condensed table-bordered" style="background-color: #e8f5e9;">
+                            <thead><tr><th class="text-right">@lang('lang_v1.denomination')</th><th class="text-center">@lang('lang_v1.count')</th><th class="text-right">@lang('sale.subtotal')</th></tr></thead>
+                            <tbody>
+                              @php $mxn_total = 0; @endphp
+                              @foreach($mxn_bd as $denom => $count)
+                                @php
+                                  $sub = $denom === 'coins' ? floatval($count) : floatval($denom) * intval($count);
+                                  $mxn_total += $sub;
+                                @endphp
+                                <tr>
+                                  <td class="text-right">
+                                    @if($denom === 'coins') @lang('lang_v1.coins')
+                                    @else <span class="display_currency" data-currency_symbol="true">{{ $denom }}</span>
+                                    @endif
+                                  </td>
+                                  <td class="text-center">@if($denom === 'coins')--@else {{ $count }}@endif</td>
+                                  <td class="text-right"><span class="display_currency" data-currency_symbol="true">{{ $sub }}</span></td>
+                                </tr>
+                              @endforeach
+                              <tr class="bg-green"><th colspan="2" class="text-right">Subtotal MXN:</th><th class="text-right"><span class="display_currency" data-currency_symbol="true">{{ $mxn_total }}</span></th></tr>
+                            </tbody>
+                          </table>
+                        </div>
+                      @endif
+                      @if(!empty($usd_bd))
+                        <div class="col-md-6">
+                          <strong>DÓLARES (USD)</strong>
+                          <table class="table table-condensed table-bordered" style="background-color: #e3f2fd;">
+                            <thead><tr><th class="text-right">@lang('lang_v1.denomination')</th><th class="text-center">@lang('lang_v1.count')</th><th class="text-right">@lang('sale.subtotal')</th></tr></thead>
+                            <tbody>
+                              @php $usd_total = 0; @endphp
+                              @foreach($usd_bd as $denom => $count)
+                                @php
+                                  $sub = $denom === 'coins' ? floatval($count) : floatval($denom) * intval($count);
+                                  $usd_total += $sub;
+                                @endphp
+                                <tr>
+                                  <td class="text-right">
+                                    @if($denom === 'coins') @lang('lang_v1.coins')
+                                    @else ${{ $denom }}
+                                    @endif
+                                  </td>
+                                  <td class="text-center">@if($denom === 'coins')--@else {{ $count }}@endif</td>
+                                  <td class="text-right">${{ number_format($sub, 2) }}</td>
+                                </tr>
+                              @endforeach
+                              <tr class="bg-blue"><th colspan="2" class="text-right">Subtotal USD:</th><th class="text-right">${{ number_format($usd_total, 2) }}</th></tr>
+                              @if($exchange_rate)
+                                <tr><th colspan="2" class="text-right">@lang('lang_v1.equivalent_in') MXN:</th><th class="text-right"><span class="display_currency" data-currency_symbol="true">{{ $usd_total * $exchange_rate }}</span></th></tr>
+                              @endif
+                            </tbody>
+                          </table>
+                        </div>
+                      @endif
+                    </div>
+                  </td>
+                </tr>
+              @endif
             @endforeach
           </table>
         </div>

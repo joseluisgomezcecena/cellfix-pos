@@ -20,7 +20,7 @@ class Kernel extends ConsoleKernel
 
         if ($env === 'live') {
             //Scheduling backup, specify the time when the backup will get cleaned & time when it will run.
-            
+
             $schedule->command('backup:clean')->daily()->at('01:00');
             $schedule->command('backup:run')->daily()->at('01:30');
 
@@ -32,6 +32,11 @@ class Kernel extends ConsoleKernel
             $schedule->command('pos:autoSendPaymentReminder')->dailyAt('8:00');
 
         }
+
+        // Daily POS cut: partial snapshot at 18:00, final snapshot at 23:59
+        // Both run in any environment (not gated by 'live') so dev can also test it.
+        $schedule->command('pos:daily-cut')->dailyAt('18:00');
+        $schedule->command('pos:daily-cut')->dailyAt('23:59');
 
         if ($env === 'demo') {
             //IMPORTANT NOTE: This command will delete all business details and create dummy business, run only in demo server.

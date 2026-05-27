@@ -430,12 +430,12 @@ class SellController extends Controller
 
             // Action buttons simplificados
             $action_html = '<div class="btn-group">
-                <button type="button" class="tw-dw-btn tw-dw-btn-xs tw-dw-btn-outline tw-dw-btn-info dropdown-toggle" 
+                <button type="button" class="tw-dw-btn tw-dw-btn-xs tw-dw-btn-outline tw-dw-btn-info dropdown-toggle"
                     data-toggle="dropdown">' . __('messages.actions') . '</button>
                 <ul class="dropdown-menu dropdown-menu-left" role="menu">
-                    <li><a href="#" data-href="' . action([\App\Http\Controllers\SellController::class, 'show'], [$row->id]) . '" 
+                    <li><a href="#" data-href="' . action([\App\Http\Controllers\SellController::class, 'show'], [$row->id]) . '"
                         class="btn-modal" data-container=".view_modal"><i class="fas fa-eye"></i> ' . __('messages.view') . '</a></li>';
-            
+
             if ($row->is_direct_sale == 0) {
                 $action_html .= '<li><a target="_blank" href="' . action([\App\Http\Controllers\SellPosController::class, 'edit'], [$row->id]) . '">
                     <i class="fas fa-edit"></i> ' . __('messages.edit') . '</a></li>';
@@ -443,7 +443,17 @@ class SellController extends Controller
                 $action_html .= '<li><a target="_blank" href="' . action([\App\Http\Controllers\SellController::class, 'edit'], [$row->id]) . '">
                     <i class="fas fa-edit"></i> ' . __('messages.edit') . '</a></li>';
             }
-            
+
+            $action_html .= '<li><a href="' . route('sell.printInvoice', [$row->id]) . '" class="print-invoice"><i class="fas fa-print"></i> ' . __('messages.print') . '</a></li>';
+
+            if (auth()->user()->can('access_sell_return') && $row->status == 'final') {
+                $action_html .= '<li><a href="' . action([\App\Http\Controllers\SellReturnController::class, 'add'], [$row->id]) . '"><i class="fas fa-undo"></i> ' . __('lang_v1.sell_return') . '</a></li>';
+            }
+
+            if (auth()->user()->can('direct_sell.delete')) {
+                $action_html .= '<li><a href="' . action([\App\Http\Controllers\SellPosController::class, 'destroy'], [$row->id]) . '" class="delete-sale"><i class="fas fa-trash"></i> ' . __('messages.delete') . '</a></li>';
+            }
+
             $action_html .= '</ul></div>';
 
             $formattedData[] = [

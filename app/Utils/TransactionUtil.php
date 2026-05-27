@@ -111,7 +111,7 @@ class TransactionUtil extends Util
             'recur_repetitions' => ! empty($input['recur_repetitions']) ? $input['recur_repetitions'] : 0,
             'order_addresses' => ! empty($input['order_addresses']) ? $input['order_addresses'] : null,
             'sub_type' => ! empty($input['sub_type']) ? $input['sub_type'] : null,
-            'rp_earned' => $input['status'] == 'final' ? $this->calculateRewardPoints($business_id, $final_total) : 0,
+            'rp_earned' => $input['status'] == 'final' ? $this->calculateRewardPoints($business_id, $final_total, !empty($input['products']) ? $input['products'] : []) : 0,
             'rp_redeemed' => ! empty($input['rp_redeemed']) ? $input['rp_redeemed'] : 0,
             'rp_redeemed_amount' => ! empty($input['rp_redeemed_amount']) ? $input['rp_redeemed_amount'] : 0,
             'is_created_from_api' => ! empty($input['is_created_from_api']) ? 1 : 0,
@@ -232,7 +232,7 @@ class TransactionUtil extends Util
             'subscription_repeat_on' => ! empty($input['subscription_repeat_on']) ? $input['subscription_repeat_on'] : null,
             'recur_repetitions' => ! empty($input['recur_repetitions']) ? $input['recur_repetitions'] : 0,
             'order_addresses' => ! empty($input['order_addresses']) ? $input['order_addresses'] : null,
-            'rp_earned' => $input['status'] == 'final' ? $this->calculateRewardPoints($business_id, $final_total) : 0,
+            'rp_earned' => $input['status'] == 'final' ? $this->calculateRewardPoints($business_id, $final_total, !empty($input['products']) ? $input['products'] : []) : 0,
             'rp_redeemed' => ! empty($input['rp_redeemed']) ? $input['rp_redeemed'] : 0,
             'rp_redeemed_amount' => ! empty($input['rp_redeemed_amount']) ? $input['rp_redeemed_amount'] : 0,
             'types_of_service_id' => ! empty($input['types_of_service_id']) ? $input['types_of_service_id'] : null,
@@ -384,6 +384,9 @@ class TransactionUtil extends Util
                     'res_line_order_status' => ! empty($product['res_service_staff_id']) ? 'received' : null,
                     'so_line_id' => ! empty($product['so_line_id']) ? $product['so_line_id'] : null,
                     'secondary_unit_quantity' => ! empty($product['secondary_unit_quantity']) ? $this->num_uf($product['secondary_unit_quantity']) : 0,
+                    'technician_id' => ! empty($product['technician_id']) ? $product['technician_id'] : null,
+                    'repair_entry_date' => ! empty($product['repair_entry_date']) ? $product['repair_entry_date'] : null,
+                    'repair_anticipo' => ! empty($product['repair_anticipo']) ? (float) $product['repair_anticipo'] : null,
                 ];
 
                 foreach ($extra_line_parameters as $key => $value) {
@@ -603,6 +606,9 @@ class TransactionUtil extends Util
             'sub_unit_id' => ! empty($product['sub_unit_id']) ? $product['sub_unit_id'] : null,
             'res_service_staff_id' => ! empty($product['res_service_staff_id']) ? $product['res_service_staff_id'] : null,
             'secondary_unit_quantity' => ! empty($product['secondary_unit_quantity']) ? $this->num_uf($product['secondary_unit_quantity']) : 0,
+            'technician_id' => ! empty($product['technician_id']) ? $product['technician_id'] : null,
+            'repair_entry_date' => ! empty($product['repair_entry_date']) ? $product['repair_entry_date'] : null,
+            'repair_anticipo' => ! empty($product['repair_anticipo']) ? (float) $product['repair_anticipo'] : null,
         ]);
         $sell_line->save();
 
@@ -757,9 +763,12 @@ class TransactionUtil extends Util
                         'card_holder_name' => isset($payment['card_holder_name']) ? $payment['card_holder_name'] : null,
                         'card_month' => isset($payment['card_month']) ? $payment['card_month'] : null,
                         'card_security' => isset($payment['card_security']) ? $payment['card_security'] : null,
+                        'card_terminal_id' => !empty($payment['card_terminal_id']) ? $payment['card_terminal_id'] : null,
                         'cheque_number' => isset($payment['cheque_number']) ? $payment['cheque_number'] : null,
                         'bank_account_number' => isset($payment['bank_account_number']) ? $payment['bank_account_number'] : null,
+                        'transaction_no' => isset($payment['transaction_no']) ? $payment['transaction_no'] : null,
                         'note' => isset($payment['note']) ? $payment['note'] : null,
+                        'denomination_breakdown' => !empty($payment['denomination_breakdown']) ? $payment['denomination_breakdown'] : null,
                         'paid_on' => $paid_on,
                         'created_by' => empty($user_id) ? auth()->user()->id : $user_id,
                         'payment_for' => $transaction->contact_id,
@@ -4712,7 +4721,7 @@ class TransactionUtil extends Util
      *
      * @return int
      */
-    public function calculateRewardPoints($business_id, $total)
+    public function calculateRewardPoints($business_id, $total, $products = [])
     {
         if (session()->has('business')) {
             $business = session()->get('business');
@@ -4721,18 +4730,54 @@ class TransactionUtil extends Util
         }
         $total_points = 0;
 
-        if ($business->enable_rp == 1) {
-            //check if order total elegible for reward
-            if ($business->min_order_total_for_rp > $total) {
-                return $total_points;
-            }
-            $amount_per_unit_point = $business->amount_for_unit_rp;
+        if ($business->enable_rp != 1) {
+            return $total_points;
+        }
 
-            $total_points = floor($total / $amount_per_unit_point);
+        // Check if order total elegible for reward
+        if ($business->min_order_total_for_rp > $total) {
+            return $total_points;
+        }
 
-            if (! empty($business->max_rp_per_order) && $business->max_rp_per_order < $total_points) {
-                $total_points = $business->max_rp_per_order;
+        $amount_per_unit_point = $business->amount_for_unit_rp;
+
+        // Per-product override: if any product has reward_points set, use that
+        // override for its share. The remaining amount applies the global rule.
+        $override_points = 0;
+        $override_amount = 0;
+
+        if (!empty($products) && is_array($products)) {
+            $product_ids = array_filter(array_column($products, 'product_id'));
+            if (!empty($product_ids)) {
+                $product_overrides = \App\Product::whereIn('id', $product_ids)
+                    ->whereNotNull('reward_points')
+                    ->pluck('reward_points', 'id')
+                    ->toArray();
+
+                foreach ($products as $line) {
+                    if (empty($line['product_id'])) continue;
+                    $pid = $line['product_id'];
+                    if (isset($product_overrides[$pid])) {
+                        $qty = floatval($line['quantity'] ?? 0);
+                        $override_points += $product_overrides[$pid] * $qty;
+                        $unit_price = floatval($line['unit_price'] ?? $line['unit_price_inc_tax'] ?? 0);
+                        $override_amount += $unit_price * $qty;
+                    }
+                }
             }
+        }
+
+        // Global rule applies to the portion of the total NOT covered by overrides
+        $remaining_amount = $total - $override_amount;
+        if ($remaining_amount < 0) {
+            $remaining_amount = 0;
+        }
+        $base_points = floor($remaining_amount / $amount_per_unit_point);
+
+        $total_points = $override_points + $base_points;
+
+        if (!empty($business->max_rp_per_order) && $business->max_rp_per_order < $total_points) {
+            $total_points = $business->max_rp_per_order;
         }
 
         return $total_points;

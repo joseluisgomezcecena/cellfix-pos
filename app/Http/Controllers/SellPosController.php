@@ -1753,8 +1753,12 @@ class SellPosController extends Controller
                 $edit_price = auth()->user()->can('edit_product_price_from_pos_screen');
             }
 
+            // Technicians dropdown: ANY technician of the business can be picked (regardless of location)
+            $technicians = \App\Technician::forDropdown($business_id);
+            $is_repair_brand = !empty($product->brand) && stripos((string) $product->brand, 'reparac') !== false;
+
             $output['html_content'] = view('sale_pos.product_row')
-                ->with(compact('product', 'row_count', 'tax_dropdown', 'enabled_modules', 'pos_settings', 'sub_units', 'discount', 'waiters', 'edit_discount', 'edit_price', 'purchase_line_id', 'warranties', 'quantity', 'is_direct_sell', 'so_line', 'is_sales_order', 'last_sell_line', 'is_serial_no'))
+                ->with(compact('product', 'row_count', 'tax_dropdown', 'enabled_modules', 'pos_settings', 'sub_units', 'discount', 'waiters', 'edit_discount', 'edit_price', 'purchase_line_id', 'warranties', 'quantity', 'is_direct_sell', 'so_line', 'is_sales_order', 'last_sell_line', 'is_serial_no', 'technicians', 'is_repair_brand'))
                 ->render();
         }
 

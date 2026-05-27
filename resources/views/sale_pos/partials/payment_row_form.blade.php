@@ -15,7 +15,16 @@
 					<i class="fas fa-money-bill-alt"></i>
 				</span>
 				{!! Form::text("payment[$row_index][amount]", @num_format($payment_line['amount']), ['class' => 'form-control payment-amount input_number', 'required', 'id' => "amount_$row_index", 'placeholder' => __('sale.amount'), 'readonly' => $readonly]); !!}
+				<span class="input-group-btn">
+					<button type="button"
+						class="btn btn-success btn-flat open-denominations-popup @if($payment_line['method'] != 'cash') hide @endif"
+						data-row_index="{{ $row_index }}"
+						title="Capturar billetes MXN y USD">
+						<i class="fas fa-calculator"></i> MXN/USD
+					</button>
+				</span>
 			</div>
+			<input type="hidden" name="payment[{{ $row_index }}][denomination_breakdown]" class="denomination_breakdown_input" value="">
 		</div>
 	</div>
 	@if(!empty($show_date))

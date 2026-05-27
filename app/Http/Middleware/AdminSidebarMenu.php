@@ -389,6 +389,50 @@ class AdminSidebarMenu
                                 ['icon' => '', 'active' => request()->segment(1) == 'discount']
                             );
                         }
+                        if (auth()->user()->can('business_settings.access')) {
+                            $sub->url(
+                                action([\App\Http\Controllers\CardTerminalController::class, 'index']),
+                                __('lang_v1.card_terminals'),
+                                ['icon' => '', 'active' => request()->segment(1) == 'card-terminals']
+                            );
+                            $sub->url(
+                                action([\App\Http\Controllers\TechnicianController::class, 'index']),
+                                __('lang_v1.technicians'),
+                                ['icon' => '', 'active' => request()->segment(1) == 'technicians']
+                            );
+                            $sub->url(
+                                action([\App\Http\Controllers\CommissionTargetController::class, 'index']),
+                                __('lang_v1.commission_targets'),
+                                ['icon' => '', 'active' => request()->segment(1) == 'commission-targets']
+                            );
+                        }
+                        if (auth()->user()->can('business_settings.access') || auth()->user()->can('view_purchase_n_sell_report')) {
+                            $sub->url(
+                                action([\App\Http\Controllers\DailyCutController::class, 'index']),
+                                __('lang_v1.daily_cuts'),
+                                ['icon' => '', 'active' => request()->segment(1) == 'daily-cuts']
+                            );
+                            $sub->url(
+                                action([\App\Http\Controllers\TechnicianController::class, 'report']),
+                                __('lang_v1.technicians_report'),
+                                ['icon' => '', 'active' => request()->segment(1) == 'technicians' && request()->segment(2) == 'report']
+                            );
+                            $sub->url(
+                                action([\App\Http\Controllers\VendorReportController::class, 'weekly']),
+                                __('lang_v1.vendors_weekly_report'),
+                                ['icon' => '', 'active' => request()->segment(1) == 'vendor-reports']
+                            );
+                            $sub->url(
+                                action([\App\Http\Controllers\SalesDashboardController::class, 'index']),
+                                __('lang_v1.sales_dashboard'),
+                                ['icon' => '', 'active' => request()->segment(1) == 'sales-dashboard']
+                            );
+                            $sub->url(
+                                url('/equipos-apartados'),
+                                __('lang_v1.reserved_equipos_report'),
+                                ['icon' => '', 'active' => request()->segment(1) == 'equipos-apartados']
+                            );
+                        }
                         if (in_array('subscription', $enabled_modules) && auth()->user()->can('direct_sell.access')) {
                             $sub->url(
                                 action([\App\Http\Controllers\SellPosController::class, 'listSubscriptions']),
@@ -463,6 +507,11 @@ class AdminSidebarMenu
                                 action([\App\Http\Controllers\StockAdjustmentController::class, 'create']),
                                 __('stock_adjustment.add'),
                                 ['icon' => '', 'active' => request()->segment(1) == 'stock-adjustments' && request()->segment(2) == 'create']
+                            );
+                            $sub->url(
+                                action([\App\Http\Controllers\StockCorrectionController::class, 'index']),
+                                __('lang_v1.stock_correction'),
+                                ['icon' => '', 'active' => request()->segment(1) == 'stock-corrections']
                             );
                         }
                     },
@@ -848,6 +897,14 @@ class AdminSidebarMenu
                                 action([\App\Http\Controllers\TaxRateController::class, 'index']),
                                 __('tax_rate.tax_rates'),
                                 ['icon' => '', 'active' => request()->segment(1) == 'tax-rates']
+                            );
+                        }
+
+                        if (auth()->user()->can('business_settings.access')) {
+                            $sub->url(
+                                action([\App\Http\Controllers\ExchangeRateController::class, 'edit']),
+                                __('lang_v1.exchange_rate_settings'),
+                                ['icon' => '', 'active' => request()->segment(1) == 'exchange-rate']
                             );
                         }
 

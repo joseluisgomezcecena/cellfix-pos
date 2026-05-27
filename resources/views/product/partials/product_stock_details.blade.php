@@ -1,5 +1,6 @@
 <div class="row">
 	<div class="col-md-12">
+		@php $reserved_layaway = $reserved_layaway ?? []; @endphp
 		<div class="table-responsive">
 			<table class="table table-condensed bg-gray">
 				<thead>
@@ -9,6 +10,7 @@
 		                <th>@lang('business.location')</th>
 		                <th>@lang('sale.unit_price')</th>
 		                <th>@lang('report.current_stock')</th>
+		                <th>@lang('lang_v1.reserved_layaway')</th>
 		                <th>@lang('lang_v1.total_stock_price')</th>
 		                <th>@lang('report.total_unit_sold')</th>
 		                <th>@lang('lang_v1.total_unit_transfered')</th>
@@ -36,7 +38,11 @@
                         		<span data-is_quantity="true" class="display_currency"data-currency_symbol=false >{{$product->stock ?? 0}}</span>{{$product->unit}}
                         	</td>
                         	<td>
-                        		<span class="display_currency"data-currency_symbol=true >{{$product->unit_price * $product->stock}}</span>
+                        		@php $resv = $reserved_layaway[$product->variation_id][$product->location_id] ?? 0; @endphp
+		            			@if($resv > 0)<span class="label" style="background-color:#f39c12;">{{ (float) $resv }} @lang('lang_v1.reserved')</span>@else<span class="text-muted">0</span>@endif
+		            		</td>
+		            		<td>
+		            			<span class="display_currency"data-currency_symbol=true >{{$product->unit_price * $product->stock}}</span>
                         	</td>
                         	<td>
                         		<span data-is_quantity="true" class="display_currency"data-currency_symbol=false >{{$product->total_sold ?? 0}}</span>{{$product->unit}}

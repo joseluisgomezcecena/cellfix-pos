@@ -776,6 +776,23 @@ $(document).ready(function() {
 
     pos_form_validator = pos_form_obj.validate({
         submitHandler: function(form) {
+            // Repair items must have a technician selected
+            var missing_tech = false;
+            $('table#pos_table tbody tr.product_row[data-is_repair="1"]').each(function () {
+                var $select = $(this).find('.technician_select');
+                if (!$select.val()) {
+                    $select.css('border', '2px solid #d9534f').focus();
+                    missing_tech = true;
+                    return false;
+                } else {
+                    $select.css('border', '');
+                }
+            });
+            if (missing_tech) {
+                toastr.error('Selecciona el técnico para cada producto de reparación antes de cobrar');
+                return false;
+            }
+
             // var total_payble = __read_number($('input#final_total_input'));
             // var total_paying = __read_number($('input#total_paying_input'));
             var cnf = true;

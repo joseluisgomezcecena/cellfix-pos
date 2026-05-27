@@ -1,49 +1,34 @@
-<div class="payment_details_div @if( $payment_line['method'] !== 'card' ) {{ 'hide' }} @endif" data-type="card" >
-	<div class="col-md-4">
+<div class="payment_details_div @if( $payment_line['method'] !== 'card' ) {{ 'hide' }} @endif" data-type="card">
+	<div class="col-md-6">
 		<div class="form-group">
-			{!! Form::label("card_number_$row_index", __('lang_v1.card_no')) !!}
-			{!! Form::text("payment[$row_index][card_number]", $payment_line['card_number'], ['class' => 'form-control', 'placeholder' => __('lang_v1.card_no'), 'id' => "card_number_$row_index"]); !!}
+			{!! Form::label("card_type_$row_index", __('lang_v1.card_type') . ':*') !!}
+			{!! Form::select("payment[$row_index][card_type]", [
+				'debit' => __('lang_v1.debit_card'),
+				'credit' => __('lang_v1.credit_card'),
+				'amex' => __('lang_v1.american_express'),
+			], $payment_line['card_type'] ?? 'debit', [
+				'class' => 'form-control card_type_hidden',
+				'id' => "card_type_$row_index",
+				'style' => 'width:100%;',
+			]) !!}
 		</div>
 	</div>
-	<div class="col-md-4">
+	@php
+		$card_terminals_options = \App\CardTerminal::forDropdown(session('user.business_id'));
+	@endphp
+	@if(count($card_terminals_options) > 0)
+	<div class="col-md-6">
 		<div class="form-group">
-			{!! Form::label("card_holder_name_$row_index", __('lang_v1.card_holder_name')) !!}
-			{!! Form::text("payment[$row_index][card_holder_name]", $payment_line['card_holder_name'], ['class' => 'form-control', 'placeholder' => __('lang_v1.card_holder_name'), 'id' => "card_holder_name_$row_index"]); !!}
+			{!! Form::label("card_terminal_id_$row_index", __('lang_v1.card_terminal') . ':') !!}
+			{!! Form::select("payment[$row_index][card_terminal_id]", $card_terminals_options, $payment_line['card_terminal_id'] ?? null, [
+				'class' => 'form-control',
+				'id' => "card_terminal_id_$row_index",
+				'placeholder' => __('lang_v1.select_terminal'),
+				'style' => 'width:100%;',
+			]) !!}
 		</div>
 	</div>
-	<div class="col-md-4">
-		<div class="form-group">
-			{!! Form::label("card_transaction_number_$row_index",__('lang_v1.card_transaction_no')) !!}
-			{!! Form::text("payment[$row_index][card_transaction_number]", $payment_line['card_transaction_number'], ['class' => 'form-control', 'placeholder' => __('lang_v1.card_transaction_no'), 'id' => "card_transaction_number_$row_index"]); !!}
-		</div>
-	</div>
-	<div class="clearfix"></div>
-	<div class="col-md-3">
-		<div class="form-group">
-			{!! Form::label("card_type_$row_index", __('lang_v1.card_type')) !!}
-			{!! Form::select("payment[$row_index][card_type]", ['credit' => 'Credit Card', 'debit' => 'Debit Card','visa' => 'Visa', 'master' => 'MasterCard'], $payment_line['card_type'],['class' => 'form-control', 'id' => "card_type_$row_index" ]); !!}
-		</div>
-	</div>
-	<div class="col-md-3">
-		<div class="form-group">
-			{!! Form::label("card_month_$row_index", __('lang_v1.month')) !!}
-			{!! Form::text("payment[$row_index][card_month]", $payment_line['card_month'], ['class' => 'form-control', 'placeholder' => __('lang_v1.month'),
-			'id' => "card_month_$row_index" ]); !!}
-		</div>
-	</div>
-	<div class="col-md-3">
-		<div class="form-group">
-			{!! Form::label("card_year_$row_index", __('lang_v1.year')) !!}
-			{!! Form::text("payment[$row_index][card_year]", $payment_line['card_year'], ['class' => 'form-control', 'placeholder' => __('lang_v1.year'), 'id' => "card_year_$row_index" ]); !!}
-		</div>
-	</div>
-	<div class="col-md-3">
-		<div class="form-group">
-			{!! Form::label("card_security_$row_index",__('lang_v1.security_code')) !!}
-			{!! Form::text("payment[$row_index][card_security]", $payment_line['card_security'], ['class' => 'form-control', 'placeholder' => __('lang_v1.security_code'), 'id' => "card_security_$row_index"]); !!}
-		</div>
-	</div>
-	<div class="clearfix"></div>
+	@endif
 </div>
 <div class="payment_details_div @if( $payment_line['method'] !== 'cheque' ) {{ 'hide' }} @endif" data-type="cheque" >
 	<div class="col-md-12">

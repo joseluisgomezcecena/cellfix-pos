@@ -190,6 +190,23 @@ class ProductController extends Controller
                 $products->where('products.repair_model_id', request()->get('repair_model_id'));
             }
 
+            // Productos con apartado activo (para columna STATUS)
+            $layaway_product_ids = [];
+            try {
+                if (\Schema::hasTable('layaways') && \Schema::hasTable('layaway_items')) {
+                    $layaway_product_ids = DB::table('layaway_items as li')
+                        ->join('layaways as l', 'l.id', '=', 'li.layaway_id')
+                        ->where('l.business_id', request()->session()->get('user.business_id'))
+                        ->whereIn('l.status', ['pending', 'active'])
+                        ->pluck('li.product_id')
+                        ->unique()
+                        ->flip()
+                        ->toArray();
+                }
+            } catch (\Exception $e) {
+                $layaway_product_ids = [];
+            }
+
             return Datatables::of($products)
                 ->addColumn(
                     'product_locations',
@@ -284,6 +301,19 @@ class ProductController extends Controller
                         return '--';
                     }
                 })
+                ->addColumn('status', function ($row) use ($layaway_product_ids) {
+                    if (! $row->enable_stock) {
+                        return '<span class="label label-default">--</span>';
+                    }
+                    if (isset($layaway_product_ids[$row->id])) {
+                        return '<span class="label" style="background-color:#f39c12;">'.__('lang_v1.reserved_layaway').'</span>';
+                    }
+                    if ((float) $row->current_stock <= 0) {
+                        return '<span class="label label-danger">'.__('lang_v1.status_out_of_stock').'</span>';
+                    }
+
+                    return '<span class="label label-success">'.__('lang_v1.status_available').'</span>';
+                })
                 ->addColumn(
                     'purchase_price',
                     '<div style="white-space: nowrap;">@format_currency($min_purchase_price) @if($max_purchase_price != $min_purchase_price && $type == "variable") -  @format_currency($max_purchase_price)@endif </div>'
@@ -306,7 +336,7 @@ class ProductController extends Controller
                             return '';
                         }
                     }, ])
-                ->rawColumns(['action', 'image', 'mass_delete', 'product', 'selling_price', 'purchase_price', 'category', 'current_stock'])
+                ->rawColumns(['action', 'image', 'mass_delete', 'product', 'selling_price', 'purchase_price', 'category', 'current_stock', 'status'])
                 ->make(true);
         }
 
@@ -491,6 +521,7 @@ class ProductController extends Controller
             $common_settings = session()->get('business.common_settings');
 
             $product_details['warranty_id'] = ! empty($request->input('warranty_id')) ? $request->input('warranty_id') : null;
+            $product_details['reward_points'] = $request->input('reward_points') !== null && $request->input('reward_points') !== '' ? (int) $request->input('reward_points') : null;
 
             DB::beginTransaction();
 
@@ -719,6 +750,7 @@ class ProductController extends Controller
             $product->sub_unit_ids = ! empty($product_details['sub_unit_ids']) ? $product_details['sub_unit_ids'] : null;
             $product->preparation_time_in_minutes = $product_details['preparation_time_in_minutes'];
             $product->warranty_id = ! empty($request->input('warranty_id')) ? $request->input('warranty_id') : null;
+            $product->reward_points = $request->input('reward_points') !== null && $request->input('reward_points') !== '' ? (int) $request->input('reward_points') : null;
             $product->secondary_unit_id = ! empty($request->input('secondary_unit_id')) ? $request->input('secondary_unit_id') : null;
 
             if (! empty($request->input('enable_stock')) && $request->input('enable_stock') == 1) {

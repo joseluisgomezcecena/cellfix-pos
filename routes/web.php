@@ -409,6 +409,42 @@ Route::middleware(['setData', 'auth', 'SetSessionData', 'language', 'timezone', 
     Route::post('/discount/mass-deactivate', [DiscountController::class, 'massDeactivate']);
     Route::resource('discount', DiscountController::class);
 
+    Route::resource('card-terminals', \App\Http\Controllers\CardTerminalController::class);
+    Route::get('/technicians/report', [\App\Http\Controllers\TechnicianController::class, 'report'])->name('technicians.report');
+    Route::get('/technicians/export-report', [\App\Http\Controllers\TechnicianController::class, 'exportReport'])->name('technicians.export-report');
+    Route::get('/technicians/repair-commissions', [\App\Http\Controllers\TechnicianController::class, 'repairCommissions'])->name('technicians.repair-commissions');
+    Route::post('/technicians/repair-commissions', [\App\Http\Controllers\TechnicianController::class, 'saveRepairCommissions'])->name('technicians.save-repair-commissions');
+    Route::resource('technicians', \App\Http\Controllers\TechnicianController::class);
+
+    Route::get('/commission-targets', [\App\Http\Controllers\CommissionTargetController::class, 'index'])->name('commission-targets.index');
+    Route::get('/commission-targets/{user_id}/edit', [\App\Http\Controllers\CommissionTargetController::class, 'edit'])->name('commission-targets.edit');
+    Route::put('/commission-targets/{user_id}', [\App\Http\Controllers\CommissionTargetController::class, 'update'])->name('commission-targets.update');
+
+    Route::get('/vendor-reports/weekly', [\App\Http\Controllers\VendorReportController::class, 'weekly'])->name('vendor-reports.weekly');
+    Route::get('/vendor-reports/export-weekly', [\App\Http\Controllers\VendorReportController::class, 'exportWeekly'])->name('vendor-reports.export-weekly');
+
+    Route::get('/stock-corrections', [\App\Http\Controllers\StockCorrectionController::class, 'index'])->name('stock-corrections.index');
+    Route::get('/stock-corrections/create', [\App\Http\Controllers\StockCorrectionController::class, 'create'])->name('stock-corrections.create');
+    Route::get('/stock-corrections/search-products', [\App\Http\Controllers\StockCorrectionController::class, 'searchProducts'])->name('stock-corrections.search-products');
+    Route::post('/stock-corrections', [\App\Http\Controllers\StockCorrectionController::class, 'store'])->name('stock-corrections.store');
+
+    Route::get('/sales-dashboard', [\App\Http\Controllers\SalesDashboardController::class, 'index'])->name('sales-dashboard.index');
+    Route::post('/sales-dashboard/goal', [\App\Http\Controllers\SalesDashboardController::class, 'saveGoal'])->name('sales-dashboard.save-goal');
+    Route::get('/sales-dashboard/export', [\App\Http\Controllers\SalesDashboardController::class, 'exportExcel'])->name('sales-dashboard.export');
+
+    Route::get('/equipos-apartados', [\Modules\Layaway\Http\Controllers\LayawayController::class, 'reservedEquiposReport'])->name('layaways.reserved-equipos');
+
+    Route::get('/exchange-rate', [\App\Http\Controllers\ExchangeRateController::class, 'edit'])->name('exchange-rate.edit');
+    Route::post('/exchange-rate', [\App\Http\Controllers\ExchangeRateController::class, 'update'])->name('exchange-rate.update');
+
+    Route::get('/daily-cuts', [\App\Http\Controllers\DailyCutController::class, 'index'])->name('daily-cuts.index');
+    Route::get('/daily-cuts/weekly', [\App\Http\Controllers\DailyCutController::class, 'weekly'])->name('daily-cuts.weekly');
+    Route::get('/daily-cuts/denominations', [\App\Http\Controllers\DailyCutController::class, 'denominations'])->name('daily-cuts.denominations');
+    Route::get('/daily-cuts/export', [\App\Http\Controllers\DailyCutController::class, 'export'])->name('daily-cuts.export');
+    Route::get('/daily-cuts/export-weekly', [\App\Http\Controllers\DailyCutController::class, 'exportWeekly'])->name('daily-cuts.export-weekly');
+    Route::post('/daily-cuts/generate', [\App\Http\Controllers\DailyCutController::class, 'generate'])->name('daily-cuts.generate');
+    Route::get('/daily-cuts/{id}', [\App\Http\Controllers\DailyCutController::class, 'show'])->name('daily-cuts.show');
+
     Route::prefix('account')->group(function () {
         Route::resource('/account', AccountController::class);
         Route::get('/fund-transfer/{id}', [AccountController::class, 'getFundTransfer']);

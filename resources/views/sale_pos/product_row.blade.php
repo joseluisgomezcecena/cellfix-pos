@@ -13,7 +13,7 @@
 	@endif
 @endforeach
 
-<tr class="product_row" data-row_index="{{$row_count}}" data-category="{{$product->category_name ?? ''}}" @if(!empty($so_line)) data-so_id="{{$so_line->transaction_id}}" @endif>
+<tr class="product_row @if(!empty($is_repair_brand)) repair-row @endif" data-row_index="{{$row_count}}" data-category="{{$product->category_name ?? ''}}" data-brand="{{$product->brand ?? ''}}" data-is_repair="{{ !empty($is_repair_brand) ? 1 : 0 }}" @if(!empty($so_line)) data-so_id="{{$so_line->transaction_id}}" @endif>
 	@if(!empty($is_serial_no))
 		<td class="serial_no" ></td>
 	@endif
@@ -52,10 +52,47 @@
 		</span>
 
 		<input type="hidden" class="enable_sr_no" value="{{$product->enable_sr_no}}">
-		<input type="hidden" 
-			class="product_type" 
-			name="products[{{$row_count}}][product_type]" 
+		<input type="hidden"
+			class="product_type"
+			name="products[{{$row_count}}][product_type]"
 			value="{{$product->product_type}}">
+
+		@if(!empty($is_repair_brand))
+			<div class="technician-selector" style="margin-top: 8px; padding: 8px; background: #fff8e1; border: 1px solid #ffc107; border-radius: 4px;">
+				<label style="display: block; font-weight: bold; margin-bottom: 4px; color: #b25500;">
+					<i class="fas fa-user-cog"></i> @lang('lang_v1.technician'):*
+				</label>
+				{!! Form::select("products[$row_count][technician_id]", $technicians ?? [], null, [
+					'class' => 'form-control technician_select',
+					'required',
+					'data-row_index' => $row_count,
+					'placeholder' => __('lang_v1.select_technician'),
+					'style' => 'width:100%; font-size: 13px;',
+				]) !!}
+
+				<div class="row" style="margin-top: 8px;">
+					<div class="col-xs-6">
+						<label style="display: block; font-size: 12px; font-weight: bold; margin-bottom: 2px; color: #b25500;">
+							<i class="fas fa-calendar-alt"></i> @lang('lang_v1.repair_entry_date'):
+						</label>
+						<input type="date" name="products[{{ $row_count }}][repair_entry_date]"
+							value="{{ \Carbon\Carbon::now()->toDateString() }}"
+							class="form-control input-sm" style="font-size: 12px;">
+					</div>
+					<div class="col-xs-6">
+						<label style="display: block; font-size: 12px; font-weight: bold; margin-bottom: 2px; color: #b25500;">
+							<i class="fas fa-money-bill"></i> @lang('lang_v1.anticipo'):
+						</label>
+						<div class="input-group input-group-sm">
+							<span class="input-group-addon" style="font-size: 12px;">$</span>
+							<input type="number" name="products[{{ $row_count }}][repair_anticipo]"
+								value="0" min="0" step="0.01"
+								class="form-control input-sm" style="font-size: 12px;">
+						</div>
+					</div>
+				</div>
+			</div>
+		@endif
 
 		@php
 			$hide_tax = 'hide';

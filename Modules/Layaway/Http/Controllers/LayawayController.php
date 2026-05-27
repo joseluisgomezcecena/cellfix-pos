@@ -35,6 +35,59 @@ class LayawayController extends Controller
     }
 
     /**
+     * Reporte de equipos apartados (reservados en apartados activos) por sucursal, con IMEI.
+     */
+    public function reservedEquiposReport(Request $request)
+    {
+        if (! auth()->user()->can('layaway.view')) {
+            abort(403, 'Unauthorized action.');
+        }
+
+        $business_id = $request->session()->get('user.business_id');
+        $location_id = $request->get('location_id');
+
+        $equipos_brand = DB::table('brands')->where('business_id', $business_id)
+            ->whereRaw("LOWER(name) = 'equipos'")->value('id');
+
+        $query = DB::table('layaway_items as li')
+            ->join('layaways as l', 'l.id', '=', 'li.layaway_id')
+            ->join('products as p', 'p.id', '=', 'li.product_id')
+            ->leftJoin('variations as v', 'v.id', '=', 'li.variation_id')
+            ->leftJoin('contacts as c', 'c.id', '=', 'l.contact_id')
+            ->leftJoin('business_locations as bl', 'bl.id', '=', 'l.business_location_id')
+            ->where('l.business_id', $business_id)
+            ->whereIn('l.status', ['pending', 'active']);
+
+        if (! empty($equipos_brand)) {
+            $query->where('p.brand_id', $equipos_brand);
+        }
+        if (! empty($location_id)) {
+            $query->where('l.business_location_id', $location_id);
+        }
+
+        $rows = $query->select([
+            'bl.name as location_name',
+            'p.name as product_name',
+            DB::raw('COALESCE(v.sub_sku, p.sku) as imei'),
+            'c.name as customer',
+            'li.quantity',
+            'l.layaway_number',
+            'l.balance_due',
+            'l.payment_deadline',
+            'l.status',
+        ])->orderBy('bl.name')->orderBy('p.name')->get();
+
+        $by_location = [];
+        foreach ($rows as $r) {
+            $by_location[$r->location_name ?: 'Sin sucursal'][] = $r;
+        }
+
+        $locations = BusinessLocation::forDropdown($business_id);
+
+        return view('layaway::reserved_equipos', compact('by_location', 'locations', 'location_id'));
+    }
+
+    /**
      * Display a listing of the resource.
      * @return Renderable
      */

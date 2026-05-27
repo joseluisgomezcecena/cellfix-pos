@@ -141,6 +141,14 @@
               </div>
             </div>
             @endif
+            @if(session('business.enable_rp') == 1)
+            <div class="col-sm-4">
+              <div class="form-group">
+                {!! Form::label('reward_points', __('lang_v1.reward_points') . ':') !!} @show_tooltip(__('lang_v1.reward_points_help'))
+                {!! Form::number('reward_points', $product->reward_points, ['class' => 'form-control', 'placeholder' => __('lang_v1.reward_points_placeholder'), 'min' => '0']); !!}
+              </div>
+            </div>
+            @endif
             <!-- include module fields -->
             @if(!empty($pos_module_data))
                 @foreach($pos_module_data as $key => $value)

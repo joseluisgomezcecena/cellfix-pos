@@ -366,7 +366,27 @@ class ReportController extends Controller
             if ($for == 'view_product' && ! empty(request()->input('product_id'))) {
                 $product_stock_details = $products;
 
-                return view('product.partials.product_stock_details')->with(compact('product_stock_details'));
+                // Unidades reservadas en apartados activos, por (variación, sucursal)
+                $reserved_layaway = [];
+                try {
+                    $variation_ids = collect($products)->pluck('variation_id')->filter()->unique()->values()->toArray();
+                    if (! empty($variation_ids) && \Schema::hasTable('layaways') && \Schema::hasTable('layaway_items')) {
+                        $res = DB::table('layaway_items as li')
+                            ->join('layaways as l', 'l.id', '=', 'li.layaway_id')
+                            ->whereIn('li.variation_id', $variation_ids)
+                            ->whereIn('l.status', ['pending', 'active'])
+                            ->groupBy('li.variation_id', 'l.business_location_id')
+                            ->select('li.variation_id', 'l.business_location_id', DB::raw('SUM(li.quantity) as qty'))
+                            ->get();
+                        foreach ($res as $r) {
+                            $reserved_layaway[$r->variation_id][$r->business_location_id] = (float) $r->qty;
+                        }
+                    }
+                } catch (\Exception $e) {
+                    $reserved_layaway = [];
+                }
+
+                return view('product.partials.product_stock_details')->with(compact('product_stock_details', 'reserved_layaway'));
             }
 
             $datatable = Datatables::of($products)
