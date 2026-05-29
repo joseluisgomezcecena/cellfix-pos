@@ -1,6 +1,22 @@
 <?php
 
 return [
+    'receive_repair' => 'Recibir reparación',
+    'deliver_repair' => 'Entregar reparación',
+    'card_terminal' => 'Terminal',
+    'pay_in_usd' => 'Pago en dólares',
+    'usd_note' => 'Si capturas dólares, el monto en MXN se calcula con el tipo de cambio.',
+    'search_by_customer' => 'Buscar por nombre o teléfono del cliente...',
+    'no_pending_repairs' => 'No hay reparaciones pendientes.',
+    'deliver' => 'Entregar',
+    'amount_to_collect' => 'Monto a cobrar',
+    'collect_and_deliver' => 'Cobrar y entregar',
+    'repair_delivered' => 'Reparación entregada y cobrada correctamente.',
+    'technician' => 'Técnico',
+    'receive_repair_help' => 'Recibe un equipo a reparación: cobra el anticipo (puede ser $0) y queda pendiente de entrega; el técnico se asigna al entregar.',
+    'receive_repair_note' => 'Captura el anticipo que deja el cliente (puede ser $0). El saldo se cobra al entregar el equipo.',
+    'payment_method' => 'Método de pago',
+    'card' => 'Tarjeta',
     'repair_commissions' => 'Comisiones por reparación',
     'repair_commissions_help' => 'Asigna la comisión que gana el técnico por cada reparación. Es la misma para todos los técnicos. Deja en blanco (0) las que no comisionan.',
     'commission' => 'Comisión',

@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\BusinessLocation;
 use App\Brands;
 use App\User;
+use App\VendorCommissionTarget;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 
@@ -33,6 +34,8 @@ class VendorReportController extends Controller
         $end = $start->copy()->addDays(6)->endOfDay();
 
         $location_id = $request->get('location_id');
+        // Normaliza: vacío o 0 = todas
+        $location_id = (!empty($location_id) && (int) $location_id > 0) ? (int) $location_id : null;
 
         $data = $this->buildReportData($business_id, $start, $end, $location_id);
 
@@ -152,15 +155,31 @@ class VendorReportController extends Controller
             $combined[$d->toDateString()]['total'] = 0;
         }
 
+        // Cargar metas/comisiones configuradas para todos los vendedores del business.
+        // Estructura: $targets_by_user[user_id][brand_id] = ['meta' => x, 'rate' => y]
+        $targets_by_user = [];
+        $target_rows = VendorCommissionTarget::where('business_id', $business_id)
+            ->whereIn('user_id', $vendor_users_keyed->keys()->all())
+            ->get(['user_id', 'brand_id', 'meta_units', 'commission_per_unit']);
+        foreach ($target_rows as $tr) {
+            $targets_by_user[$tr->user_id][$tr->brand_id] = [
+                'meta' => (int) $tr->meta_units,
+                'rate' => (float) $tr->commission_per_unit,
+            ];
+        }
+
         foreach ($vendor_users_keyed as $user) {
             $vid = $user->id;
             $rows = [];
             $vendor_totals = [];
+            $vendor_commissions = []; // por marca
             foreach ($brands as $b) {
                 $vendor_totals[$b->id] = 0;
+                $vendor_commissions[$b->id] = ['units' => 0, 'meta' => 0, 'rate' => 0, 'over_meta' => 0, 'commission' => 0, 'met' => false];
             }
             $vendor_totals['n_dia'] = 0;
             $vendor_totals['total'] = 0;
+            $vendor_totals['commission_total'] = 0;
 
             foreach ($days as $d) {
                 $day_key = $d->toDateString();
@@ -183,10 +202,30 @@ class VendorReportController extends Controller
                 $rows[] = $row;
             }
 
+            // Calcular comisión por marca: solo unidades por encima de la meta.
+            foreach ($brands as $b) {
+                $units = (float) $vendor_totals[$b->id];
+                $target = $targets_by_user[$vid][$b->id] ?? null;
+                $meta = $target ? (int) $target['meta'] : 0;
+                $rate = $target ? (float) $target['rate'] : 0;
+                $over = max(0, $units - $meta);
+                $commission = round($over * $rate, 2);
+                $vendor_commissions[$b->id] = [
+                    'units' => $units,
+                    'meta' => $meta,
+                    'rate' => $rate,
+                    'over_meta' => $over,
+                    'commission' => $commission,
+                    'met' => $rate > 0 && $units >= $meta && $meta > 0,
+                ];
+                $vendor_totals['commission_total'] += $commission;
+            }
+
             $vendors[] = [
                 'user' => $user,
                 'rows' => $rows,
                 'totals' => $vendor_totals,
+                'commissions' => $vendor_commissions,
             ];
         }
 

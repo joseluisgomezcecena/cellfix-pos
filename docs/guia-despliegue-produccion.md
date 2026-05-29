@@ -166,6 +166,28 @@ resources/views/technician/repair_commissions_modal.blade.php
 database/migrations/2026_05_26_000000_create_repair_product_commissions_table.php
 ```
 
+### Orden de reparación: recepción → entrega (columna `transactions.repair_status`)
+
+> **SQL:** incluido en `deploy_produccion.sql`. Bloque individual (columna, idempotente):
+> ```sql
+> SET @e := (SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'transactions' AND column_name = 'repair_status');
+> SET @s := IF(@e = 0, 'ALTER TABLE `transactions` ADD COLUMN `repair_status` varchar(20) NULL', 'DO 1');
+> PREPARE st FROM @s; EXECUTE st; DEALLOCATE PREPARE st;
+> ```
+
+Modificados:
+```
+app/Http/Controllers/SellPosController.php        (hook recepción: marca repair_status + anticipo)
+resources/views/sale_pos/partials/pos_form_actions.blade.php   (botones Recibir/Entregar + modal recepción)
+public/js/pos.js                                  (handlers de recepción)
+```
+Nuevos:
+```
+app/Http/Controllers/RepairOrderController.php    (búsqueda de pendientes + entrega)
+resources/views/sale_pos/partials/repair_delivery_modal.blade.php
+database/migrations/2026_05_27_000000_add_repair_status_to_transactions_table.php
+```
+
 ---
 
 ## PASO 3 — Aplicar los cambios de base de datos

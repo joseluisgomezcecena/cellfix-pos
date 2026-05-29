@@ -1,6 +1,22 @@
 <?php
 
 return [
+    'receive_repair' => 'Receive repair',
+    'deliver_repair' => 'Deliver repair',
+    'card_terminal' => 'Terminal',
+    'pay_in_usd' => 'Pay in dollars',
+    'usd_note' => 'If you enter USD, the MXN amount is computed using the exchange rate.',
+    'search_by_customer' => 'Search by customer name or phone...',
+    'no_pending_repairs' => 'No pending repairs.',
+    'deliver' => 'Deliver',
+    'amount_to_collect' => 'Amount to collect',
+    'collect_and_deliver' => 'Collect and deliver',
+    'repair_delivered' => 'Repair delivered and collected successfully.',
+    'technician' => 'Technician',
+    'receive_repair_help' => 'Receive a device for repair: collect the down payment (can be $0); it stays pending delivery; the technician is assigned at delivery.',
+    'receive_repair_note' => 'Capture the down payment the customer leaves (can be $0). The balance is collected at delivery.',
+    'payment_method' => 'Payment method',
+    'card' => 'Card',
     'repair_commissions' => 'Repair commissions',
     'repair_commissions_help' => 'Set the commission the technician earns per repair. It is the same for all technicians. Leave blank (0) for those that do not pay commission.',
     'commission' => 'Commission',

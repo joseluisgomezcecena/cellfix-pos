@@ -206,6 +206,28 @@ class VendorReportSheet implements FromArray, WithTitle, WithEvents
         $totals_row[] = (int) $this->vendor_data['totals']['total'];
         $rows[] = $totals_row;
 
+        // META row
+        $commissions = $this->vendor_data['commissions'] ?? [];
+        $meta_row = ['META (unidades)'];
+        foreach ($this->brands as $b) {
+            $c = $commissions[$b->id] ?? null;
+            $meta_row[] = $c ? (int) $c['meta'] : 0;
+        }
+        $meta_row[] = '';
+        $meta_row[] = '';
+        $rows[] = $meta_row;
+
+        // COMISIÓN row
+        $commission_total = (float) ($this->vendor_data['totals']['commission_total'] ?? 0);
+        $comm_row = ['COMISIÓN ($)'];
+        foreach ($this->brands as $b) {
+            $c = $commissions[$b->id] ?? null;
+            $comm_row[] = $c ? round((float) $c['commission'], 2) : 0;
+        }
+        $comm_row[] = '';
+        $comm_row[] = round($commission_total, 2);
+        $rows[] = $comm_row;
+
         $this->total_cols = count($header);
 
         return $rows;
@@ -230,11 +252,24 @@ class VendorReportSheet implements FromArray, WithTitle, WithEvents
                     'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER],
                 ]);
 
-                $lastRow = 3 + 7 + 1;
-                $sheet->getStyle("A{$lastRow}:{$lastCol}{$lastRow}")->applyFromArray([
+                // TOTALES row (azul claro)
+                $totalsRow = 3 + 7 + 1;
+                $sheet->getStyle("A{$totalsRow}:{$lastCol}{$totalsRow}")->applyFromArray([
                     'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'BBDEFB']],
                     'font' => ['bold' => true],
                 ]);
+                // META row (amarillo)
+                $metaRow = $totalsRow + 1;
+                $sheet->getStyle("A{$metaRow}:{$lastCol}{$metaRow}")->applyFromArray([
+                    'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'FFF9C4']],
+                ]);
+                // COMISIÓN row (verde)
+                $commRow = $totalsRow + 2;
+                $sheet->getStyle("A{$commRow}:{$lastCol}{$commRow}")->applyFromArray([
+                    'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'C8E6C9']],
+                    'font' => ['bold' => true],
+                ]);
+                $lastRow = $commRow;
 
                 foreach (range('A', $lastCol) as $col) {
                     $sheet->getColumnDimension($col)->setAutoSize(true);

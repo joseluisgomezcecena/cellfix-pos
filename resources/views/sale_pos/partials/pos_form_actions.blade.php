@@ -48,6 +48,22 @@
                     @endif
                 @endif
 
+                {{-- Recepción de reparación (orden en 2 pasos: recibir → entregar) --}}
+                <input type="hidden" name="repair_status" id="repair_status" value="">
+                @if (empty($edit))
+                    <button type="button"
+                        class="tw-font-bold tw-text-gray-700 tw-cursor-pointer tw-text-xs md:tw-text-sm tw-flex tw-flex-col tw-items-center tw-justify-center tw-gap-1"
+                        id="pos-receive-repair" title="@lang('lang_v1.receive_repair_help')"
+                        @if (!empty($only_payment)) disabled @endif>
+                        <i class="fas fa-wrench tw-text-[#f39c12]"></i> @lang('lang_v1.receive_repair')
+                    </button>
+                    <button type="button"
+                        class="tw-font-bold tw-text-gray-700 tw-cursor-pointer tw-text-xs md:tw-text-sm tw-flex tw-flex-col tw-items-center tw-justify-center tw-gap-1"
+                        id="pos-deliver-repair" title="@lang('lang_v1.deliver_repair')">
+                        <i class="fas fa-handshake tw-text-[#16a085]"></i> @lang('lang_v1.deliver_repair')
+                    </button>
+                @endif
+
                 @if (empty($edit))
                     <button type="button"
                         class="tw-font-bold tw-text-white tw-cursor-pointer tw-text-xs md:tw-text-sm tw-bg-red-600 tw-p-2 tw-rounded-md"
@@ -162,6 +178,11 @@
 @include('sale_pos.partials.transfer_payment_modal')
 @include('sale_pos.partials.cheque_payment_modal')
 @include('sale_pos.partials.card_simple_modal')
+
+{{-- La recepción de reparación usa el modal de pago real del POS (#modal_payment):
+     efectivo en dólares/tipo de cambio y tarjeta con terminal, igual que una venta normal. --}}
+
+@include('sale_pos.partials.repair_delivery_modal')
 
 @if (isset($transaction))
     @include('sale_pos.partials.edit_discount_modal', [

@@ -119,7 +119,9 @@
                                                 </td>
                                                 <td class="text-right">
                                                     @if($line['debe'] > 0)
-                                                        <span class="display_currency" data-currency_symbol="true">{{ $line['debe'] }}</span>
+                                                        <span class="display_currency" data-currency_symbol="true" style="color:#c0392b;font-weight:bold;">{{ $line['debe'] }}</span>
+                                                    @else
+                                                        <span class="display_currency" data-currency_symbol="true" style="color:#27ae60;">0</span>
                                                     @endif
                                                 </td>
                                                 <td class="text-center" style="{{ $line['tipo_pago'] === 'D' ? 'background-color: #c8e6c9; font-weight: bold;' : '' }}">{{ $line['tipo_pago'] }}</td>

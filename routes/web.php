@@ -97,6 +97,11 @@ Route::middleware(['setData'])->group(function () {
         ->name('confirm_payment');
 });
 
+// Public cron endpoint — protected by DAILY_CUT_CRON_TOKEN env. Auto-generates today's daily cut.
+// Configure cron-job.org / cPanel cron to GET this URL at 18:00 every day with ?token=...
+Route::get('/cron/daily-cuts/auto-generate', [\App\Http\Controllers\DailyCutController::class, 'cronAutoGenerate'])
+    ->name('daily-cuts.cron-auto');
+
 //Routes for authenticated users only
 Route::middleware(['setData', 'auth', 'SetSessionData', 'language', 'timezone', 'AdminSidebarMenu', 'CheckUserLogin'])->group(function () {
     Route::get('pos/payment/{id}', [SellPosController::class, 'edit'])->name('edit-pos-payment');
@@ -433,6 +438,9 @@ Route::middleware(['setData', 'auth', 'SetSessionData', 'language', 'timezone', 
     Route::get('/sales-dashboard/export', [\App\Http\Controllers\SalesDashboardController::class, 'exportExcel'])->name('sales-dashboard.export');
 
     Route::get('/equipos-apartados', [\Modules\Layaway\Http\Controllers\LayawayController::class, 'reservedEquiposReport'])->name('layaways.reserved-equipos');
+
+    Route::get('/repair-orders/pending', [\App\Http\Controllers\RepairOrderController::class, 'pending'])->name('repair-orders.pending');
+    Route::post('/repair-orders/{id}/deliver', [\App\Http\Controllers\RepairOrderController::class, 'deliver'])->name('repair-orders.deliver');
 
     Route::get('/exchange-rate', [\App\Http\Controllers\ExchangeRateController::class, 'edit'])->name('exchange-rate.edit');
     Route::post('/exchange-rate', [\App\Http\Controllers\ExchangeRateController::class, 'update'])->name('exchange-rate.update');

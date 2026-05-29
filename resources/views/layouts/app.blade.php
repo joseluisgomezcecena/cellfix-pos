@@ -151,6 +151,36 @@
     height: auto !important;
   }
 }
+/* Enlaces de menús personalizados en azul */
+#side-bar a#menu-technicians,
+#side-bar a#menu-vendedores,
+#side-bar a#menu-cortes,
+#side-bar a[href$="/technicians"],
+#side-bar a[href$="/technicians/report"],
+#side-bar a[href$="/vendor-reports/weekly"],
+#side-bar a[href$="/commission-targets"],
+#side-bar a[href$="/sales-dashboard"],
+#side-bar a[href$="/stock-corrections"],
+#side-bar a[href$="/equipos-apartados"],
+#side-bar a[href$="/card-terminals"],
+#side-bar a[href$="/daily-cuts"] {
+    color: #2196f3 !important;
+    font-weight: 600 !important;
+}
+#side-bar a#menu-technicians:hover,
+#side-bar a#menu-vendedores:hover,
+#side-bar a#menu-cortes:hover,
+#side-bar a[href$="/technicians"]:hover,
+#side-bar a[href$="/technicians/report"]:hover,
+#side-bar a[href$="/vendor-reports/weekly"]:hover,
+#side-bar a[href$="/commission-targets"]:hover,
+#side-bar a[href$="/sales-dashboard"]:hover,
+#side-bar a[href$="/stock-corrections"]:hover,
+#side-bar a[href$="/equipos-apartados"]:hover,
+#side-bar a[href$="/card-terminals"]:hover,
+#side-bar a[href$="/daily-cuts"]:hover {
+    color: #0d47a1 !important;
+}
 </style>
 <style>
     .small-view-side-active {

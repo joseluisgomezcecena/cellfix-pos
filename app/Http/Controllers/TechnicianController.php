@@ -291,6 +291,7 @@ class TechnicianController extends Controller
                 't.invoice_no',
                 't.transaction_date',
                 't.location_id',
+                't.final_total',
                 'bl.name as location_name',
                 'p.name as product_name',
                 'b.name as brand_name',
@@ -311,13 +312,14 @@ class TechnicianController extends Controller
             $payments = \DB::table('transaction_payments')
                 ->whereIn('transaction_id', $transaction_ids)
                 ->where('is_return', 0)
-                ->select('transaction_id', 'method', 'denomination_breakdown')
+                ->select('transaction_id', 'method', 'amount', 'denomination_breakdown')
                 ->get();
             foreach ($payments as $p) {
                 $tx_id = $p->transaction_id;
                 if (!isset($payments_by_tx[$tx_id])) {
-                    $payments_by_tx[$tx_id] = ['used_usd' => false, 'exchange_rate' => null];
+                    $payments_by_tx[$tx_id] = ['used_usd' => false, 'exchange_rate' => null, 'paid' => 0];
                 }
+                $payments_by_tx[$tx_id]['paid'] += (float) $p->amount;
                 if ($p->method === 'cash' && !empty($p->denomination_breakdown)) {
                     $bd = is_string($p->denomination_breakdown)
                         ? json_decode($p->denomination_breakdown, true)
@@ -353,9 +355,13 @@ class TechnicianController extends Controller
                         'count' => 0,
                     ];
                 }
-                $pay_info = $payments_by_tx[$line->transaction_id] ?? ['used_usd' => false, 'exchange_rate' => null];
+                $pay_info = $payments_by_tx[$line->transaction_id] ?? ['used_usd' => false, 'exchange_rate' => null, 'paid' => 0];
                 $anticipo = (float) ($line->repair_anticipo ?? 0);
-                $debe = max(0, $line_total - $anticipo);
+                // DEBE = saldo real según pagos (no solo el anticipo); reparte el pago por línea.
+                $tx_total = (float) ($line->final_total ?: 0);
+                $tx_paid = (float) ($pay_info['paid'] ?? 0);
+                $paid_share = $tx_total > 0 ? ($tx_paid * $line_total / $tx_total) : $tx_paid;
+                $debe = max(0, round($line_total - $paid_share, 2));
 
                 $by_day[$day_key]['lines'][] = [
                     'invoice_no' => $line->invoice_no,

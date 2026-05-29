@@ -597,6 +597,8 @@ $(document).ready(function() {
 
     //Finalize invoice, open payment modal
     $('button#pos-finalize').click(function() {
+        // Cobro normal: asegurar que NO quede marcado como recepción de reparación
+        if ($('#repair_status').length) { $('#repair_status').val(''); }
         //Check if product is present or not.
         if ($('table#pos_table tbody').find('.product_row').length <= 0) {
             toastr.warning(LANG.no_products_added);
@@ -627,6 +629,9 @@ $(document).ready(function() {
 
     //Finalize without showing payment options
     $('button.pos-express-finalize').click(function() {
+
+        // Cobro normal: asegurar que NO quede marcado como recepción de reparación
+        if ($('#repair_status').length) { $('#repair_status').val(''); }
 
         //Check if product is present or not.
         if ($('table#pos_table tbody').find('.product_row').length <= 0) {
@@ -715,6 +720,19 @@ $(document).ready(function() {
         $('div#confirmSuspendModal').modal('hide');
         pos_form_obj.submit();
         $('input#is_suspend').val(0);
+    });
+
+    // === Recepción de reparación ===
+    // Reusa el modal de pago REAL del POS (#modal_payment): efectivo en dólares + tipo de
+    // cambio y tarjeta con terminal, igual que una venta normal. Solo se etiqueta como
+    // reparación pendiente; el anticipo puede ser parcial (queda saldo) o $0 (a crédito).
+    $('button#pos-receive-repair').click(function() {
+        if ($('table#pos_table tbody').find('.product_row').length <= 0) {
+            toastr.warning(LANG.no_products_added);
+            return false;
+        }
+        $('#repair_status').val('pending');
+        $('#modal_payment').modal('show');
     });
 
     //fix select2 input issue on modal

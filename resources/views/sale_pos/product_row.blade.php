@@ -71,7 +71,7 @@
 				]) !!}
 
 				<div class="row" style="margin-top: 8px;">
-					<div class="col-xs-6">
+					<div class="col-xs-12">
 						<label style="display: block; font-size: 12px; font-weight: bold; margin-bottom: 2px; color: #b25500;">
 							<i class="fas fa-calendar-alt"></i> @lang('lang_v1.repair_entry_date'):
 						</label>
@@ -79,6 +79,8 @@
 							value="{{ \Carbon\Carbon::now()->toDateString() }}"
 							class="form-control input-sm" style="font-size: 12px;">
 					</div>
+					{{-- Anticipo: ahora se captura en "Recibir reparación" (modal de recepción).
+					     Comentado para no confundir; el técnico se asigna al entregar.
 					<div class="col-xs-6">
 						<label style="display: block; font-size: 12px; font-weight: bold; margin-bottom: 2px; color: #b25500;">
 							<i class="fas fa-money-bill"></i> @lang('lang_v1.anticipo'):
@@ -90,6 +92,7 @@
 								class="form-control input-sm" style="font-size: 12px;">
 						</div>
 					</div>
+					--}}
 				</div>
 			</div>
 		@endif

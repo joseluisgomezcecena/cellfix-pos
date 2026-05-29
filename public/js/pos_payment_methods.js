@@ -38,6 +38,8 @@ $(document).ready(function () {
 
     // Helper: validates POS state before opening any payment modal
     function preCheck() {
+        // Cobro normal (métodos rápidos): NO marcar como recepción de reparación
+        if ($('#repair_status').length) { $('#repair_status').val(''); }
         if ($('table#pos_table tbody').find('.product_row').length <= 0) {
             toastr.warning(LANG.no_products_added);
             return false;

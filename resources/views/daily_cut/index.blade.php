@@ -12,6 +12,18 @@
 </section>
 
 <section class="content">
+    {{-- Estado del corte automático a las 18:00 --}}
+    <div class="alert" style="background:{{ !empty($auto_cut_today) ? '#c8e6c9' : '#fff3cd' }}; color:#222; margin-bottom:10px;">
+        <i class="fas fa-clock"></i>
+        @if(!empty($auto_cut_today))
+            <strong>Corte automático generado hoy</strong> a las {{ $auto_cut_today->generated_at->format('H:i') }}.
+            Se ejecuta solo el primer acceso al sistema después de las 18:00.
+        @else
+            <strong>Corte automático programado para las 18:00 hrs.</strong>
+            Se generará automáticamente con el primer acceso al sistema a partir de esa hora (sin necesidad de presionar "Generar corte").
+        @endif
+    </div>
+
     @component('components.filters', ['title' => __('report.filters')])
         {!! Form::open(['url' => route('daily-cuts.index'), 'method' => 'get', 'class' => 'form-inline']) !!}
             <div class="row">

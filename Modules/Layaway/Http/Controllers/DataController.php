@@ -73,6 +73,14 @@ class DataController extends Controller
                         __('layaway::lang.all_layaways'),
                         ['active' => request()->segment(1) == 'layaway' && request()->segment(2) == null]
                     );
+
+                    if (auth()->user()->can('business_settings.access') || auth()->user()->can('view_purchase_n_sell_report')) {
+                        $sub->url(
+                            url('/equipos-apartados'),
+                            __('lang_v1.reserved_equipos_report'),
+                            ['active' => request()->segment(1) == 'equipos-apartados']
+                        );
+                    }
                 },
                 ['icon' => 'fa fa-shopping-bag']
             )->order(32);

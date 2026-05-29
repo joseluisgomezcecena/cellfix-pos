@@ -573,6 +573,31 @@ class SellPosController extends Controller
 
                     $transaction->payment_status = $payment_status;
 
+                    // === Orden de reparación: RECEPCIÓN ===
+                    // Marca la venta como reparación pendiente de entrega. El anticipo = lo cobrado
+                    // ahora (parcial). El técnico se asigna después, al entregar.
+                    if (!empty($input['repair_status']) && $input['repair_status'] === 'pending') {
+                        $transaction->repair_status = 'pending';
+                        $transaction->save();
+
+                        $anticipo_total = 0;
+                        if (!empty($input['payment'])) {
+                            foreach ($input['payment'] as $pay) {
+                                if (empty($pay['is_return'])) {
+                                    $anticipo_total += (float) $this->transactionUtil->num_uf($pay['amount'] ?? 0);
+                                }
+                            }
+                        }
+                        $order_total = (float) $transaction->final_total;
+                        foreach ($transaction->sell_lines as $sl) {
+                            $line_total = (float) $sl->unit_price_inc_tax * (float) $sl->quantity;
+                            $share = $order_total > 0 ? round($anticipo_total * $line_total / $order_total, 2) : 0;
+                            $sl->repair_entry_date = \Carbon\Carbon::now()->toDateString();
+                            $sl->repair_anticipo = $share;
+                            $sl->save();
+                        }
+                    }
+
                     if ($request->session()->get('business.enable_rp') == 1) {
                         $redeemed = !empty($input['rp_redeemed']) ? $input['rp_redeemed'] : 0;
                         $this->transactionUtil->updateCustomerRewardPoints($contact_id, $transaction->rp_earned, 0, $redeemed);

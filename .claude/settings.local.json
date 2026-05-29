@@ -47,7 +47,14 @@
       "Bash(findstr /V \"Warning imagick openssl\")",
       "Bash(cat _audit_import_progress.log)",
       "Bash(head -5 _audit_import_errors.log)",
-      "Bash(echo \"exit: $?\")"
+      "Bash(echo \"exit: $?\")",
+      "Bash(grep -E \"_audit|relacion_equipos|reparaciones_lista|conv\\\\.md|site\\\\.zip|\\\\.log$\")",
+      "Bash(git commit -m 'Checkpoint: módulos POS Celfix \\(técnicos, comisiones, cortes, dashboard, inventario\\)' -m 'Funciones agregadas en esta etapa: *)",
+      "Bash(node --check public/js/pos.js)",
+      "Bash(node --check public/js/pos_payment_methods.js)",
+      "PowerShell(php artisan view:clear)",
+      "Bash(grep -v \"imagick\\\\|openssl\\\\|^Warning\\\\|^$\")",
+      "Bash(grep -n 'protected $middlewareGroups\\\\|protected $routeMiddleware\\\\|'\\\\''web'\\\\'' =>\\\\|'\\\\''admin'\\\\''' app/Http/Kernel.php)"
     ],
     "deny": [],
     "ask": []

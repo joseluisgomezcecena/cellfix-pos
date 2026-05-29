@@ -42,7 +42,16 @@ class DailyCutController extends Controller
         $cuts = $cuts->get();
         $locations = BusinessLocation::forDropdown($business_id);
 
-        return view('daily_cut.index', compact('cuts', 'locations', 'location_id', 'start_date', 'end_date'));
+        // Estado del corte automático de hoy (¿se generó ya después de las 18:00?)
+        $today = Carbon::now()->toDateString();
+        $cutoff_today = Carbon::now()->startOfDay()->setTime(18, 0);
+        $auto_cut_today = DailyCut::where('business_id', $business_id)
+            ->where('cut_date', $today)
+            ->where('generated_at', '>=', $cutoff_today)
+            ->orderByDesc('generated_at')
+            ->first();
+
+        return view('daily_cut.index', compact('cuts', 'locations', 'location_id', 'start_date', 'end_date', 'auto_cut_today'));
     }
 
     public function show($id)
@@ -447,6 +456,26 @@ class DailyCutController extends Controller
             new \App\Exports\DailyCutsExport($business_id, $start_date, $end_date, $location_id),
             $filename
         );
+    }
+
+    /**
+     * Public cron endpoint — triggers cut generation for all businesses for today.
+     * Protected by a static token (env DAILY_CUT_CRON_TOKEN). Use with cron-job.org
+     * or any external cron service hitting it at 18:00 daily.
+     */
+    public function cronAutoGenerate(Request $request)
+    {
+        $expected = env('DAILY_CUT_CRON_TOKEN');
+        if (empty($expected) || $request->get('token') !== $expected) {
+            return response()->json(['success' => false, 'msg' => 'Forbidden'], 403);
+        }
+
+        $date = $request->get('date', Carbon::now()->toDateString());
+        $count = $this->util->generateForAllBusinesses($date);
+
+        \Log::info("[daily-cut-cron] businesses={$count} date={$date}");
+
+        return response()->json(['success' => true, 'businesses' => $count, 'date' => $date]);
     }
 
     /**

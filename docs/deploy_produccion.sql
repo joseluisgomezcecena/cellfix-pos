@@ -1,7 +1,8 @@
 -- ====================================================================
 -- DESPLIEGUE A PRODUCCION - Celfix POS (feature/pos-improved)
--- Generado: 2026-05-27 02:39
+-- Generado: 2026-05-28
 -- Aplica en phpMyAdmin sobre la base de PRODUCCION. Hacer BACKUP antes.
+-- 100% IDEMPOTENTE: se puede correr varias veces sin error.
 -- ====================================================================
 
 SET FOREIGN_KEY_CHECKS=0;
@@ -168,6 +169,13 @@ PREPARE st FROM @s;
 EXECUTE st;
 DEALLOCATE PREPARE st;
 
+-- indice transaction_payments.card_terminal_id (solo si no existe)
+SET @e := (SELECT COUNT(*) FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = 'transaction_payments' AND index_name = 'transaction_payments_card_terminal_id_index');
+SET @s := IF(@e = 0, 'ALTER TABLE `transaction_payments` ADD INDEX `transaction_payments_card_terminal_id_index` (`card_terminal_id`)', 'DO 1');
+PREPARE st FROM @s;
+EXECUTE st;
+DEALLOCATE PREPARE st;
+
 -- columna transaction_payments.denomination_breakdown (solo si no existe)
 SET @e := (SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'transaction_payments' AND column_name = 'denomination_breakdown');
 SET @s := IF(@e = 0, 'ALTER TABLE `transaction_payments` ADD COLUMN `denomination_breakdown` json NULL', 'DO 1');
@@ -182,6 +190,20 @@ PREPARE st FROM @s;
 EXECUTE st;
 DEALLOCATE PREPARE st;
 
+-- indice transaction_sell_lines.technician_id (solo si no existe)
+SET @e := (SELECT COUNT(*) FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = 'transaction_sell_lines' AND index_name = 'transaction_sell_lines_technician_id_index');
+SET @s := IF(@e = 0, 'ALTER TABLE `transaction_sell_lines` ADD INDEX `transaction_sell_lines_technician_id_index` (`technician_id`)', 'DO 1');
+PREPARE st FROM @s;
+EXECUTE st;
+DEALLOCATE PREPARE st;
+
+-- FK transaction_sell_lines.technician_id → technicians.id (solo si no existe)
+SET @e := (SELECT COUNT(*) FROM information_schema.key_column_usage WHERE table_schema = DATABASE() AND table_name = 'transaction_sell_lines' AND constraint_name = 'transaction_sell_lines_technician_id_foreign');
+SET @s := IF(@e = 0, 'ALTER TABLE `transaction_sell_lines` ADD CONSTRAINT `transaction_sell_lines_technician_id_foreign` FOREIGN KEY (`technician_id`) REFERENCES `technicians` (`id`) ON DELETE SET NULL', 'DO 1');
+PREPARE st FROM @s;
+EXECUTE st;
+DEALLOCATE PREPARE st;
+
 -- columna transaction_sell_lines.repair_entry_date (solo si no existe)
 SET @e := (SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'transaction_sell_lines' AND column_name = 'repair_entry_date');
 SET @s := IF(@e = 0, 'ALTER TABLE `transaction_sell_lines` ADD COLUMN `repair_entry_date` date NULL', 'DO 1');
@@ -192,6 +214,20 @@ DEALLOCATE PREPARE st;
 -- columna transaction_sell_lines.repair_anticipo (solo si no existe)
 SET @e := (SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'transaction_sell_lines' AND column_name = 'repair_anticipo');
 SET @s := IF(@e = 0, 'ALTER TABLE `transaction_sell_lines` ADD COLUMN `repair_anticipo` decimal(22,4) NULL', 'DO 1');
+PREPARE st FROM @s;
+EXECUTE st;
+DEALLOCATE PREPARE st;
+
+-- columna transactions.repair_status (solo si no existe)
+SET @e := (SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'transactions' AND column_name = 'repair_status');
+SET @s := IF(@e = 0, 'ALTER TABLE `transactions` ADD COLUMN `repair_status` varchar(20) NULL AFTER `status`', 'DO 1');
+PREPARE st FROM @s;
+EXECUTE st;
+DEALLOCATE PREPARE st;
+
+-- indice transactions.repair_status (solo si no existe)
+SET @e := (SELECT COUNT(*) FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = 'transactions' AND index_name = 'transactions_repair_status_index');
+SET @s := IF(@e = 0, 'ALTER TABLE `transactions` ADD INDEX `transactions_repair_status_index` (`repair_status`)', 'DO 1');
 PREPARE st FROM @s;
 EXECUTE st;
 DEALLOCATE PREPARE st;

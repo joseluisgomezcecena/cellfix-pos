@@ -297,6 +297,13 @@ class AdminSidebarMenu
                 $menu->dropdown(
                     __('sale.sale'),
                     function ($sub) use ($enabled_modules, $is_admin, $pos_settings) {
+                        if (auth()->user()->can('business_settings.access') || auth()->user()->can('view_purchase_n_sell_report')) {
+                            $sub->url(
+                                action([\App\Http\Controllers\SalesDashboardController::class, 'index']),
+                                __('lang_v1.sales_dashboard'),
+                                ['icon' => '', 'active' => request()->segment(1) == 'sales-dashboard']
+                            );
+                        }
                         if (!empty($pos_settings['enable_sales_order']) && ($is_admin || auth()->user()->hasAnyPermission(['so.view_own', 'so.view_all', 'so.create']))) {
                             $sub->url(
                                 action([\App\Http\Controllers\SalesOrderController::class, 'index']),
@@ -389,50 +396,6 @@ class AdminSidebarMenu
                                 ['icon' => '', 'active' => request()->segment(1) == 'discount']
                             );
                         }
-                        if (auth()->user()->can('business_settings.access')) {
-                            $sub->url(
-                                action([\App\Http\Controllers\CardTerminalController::class, 'index']),
-                                __('lang_v1.card_terminals'),
-                                ['icon' => '', 'active' => request()->segment(1) == 'card-terminals']
-                            );
-                            $sub->url(
-                                action([\App\Http\Controllers\TechnicianController::class, 'index']),
-                                __('lang_v1.technicians'),
-                                ['icon' => '', 'active' => request()->segment(1) == 'technicians']
-                            );
-                            $sub->url(
-                                action([\App\Http\Controllers\CommissionTargetController::class, 'index']),
-                                __('lang_v1.commission_targets'),
-                                ['icon' => '', 'active' => request()->segment(1) == 'commission-targets']
-                            );
-                        }
-                        if (auth()->user()->can('business_settings.access') || auth()->user()->can('view_purchase_n_sell_report')) {
-                            $sub->url(
-                                action([\App\Http\Controllers\DailyCutController::class, 'index']),
-                                __('lang_v1.daily_cuts'),
-                                ['icon' => '', 'active' => request()->segment(1) == 'daily-cuts']
-                            );
-                            $sub->url(
-                                action([\App\Http\Controllers\TechnicianController::class, 'report']),
-                                __('lang_v1.technicians_report'),
-                                ['icon' => '', 'active' => request()->segment(1) == 'technicians' && request()->segment(2) == 'report']
-                            );
-                            $sub->url(
-                                action([\App\Http\Controllers\VendorReportController::class, 'weekly']),
-                                __('lang_v1.vendors_weekly_report'),
-                                ['icon' => '', 'active' => request()->segment(1) == 'vendor-reports']
-                            );
-                            $sub->url(
-                                action([\App\Http\Controllers\SalesDashboardController::class, 'index']),
-                                __('lang_v1.sales_dashboard'),
-                                ['icon' => '', 'active' => request()->segment(1) == 'sales-dashboard']
-                            );
-                            $sub->url(
-                                url('/equipos-apartados'),
-                                __('lang_v1.reserved_equipos_report'),
-                                ['icon' => '', 'active' => request()->segment(1) == 'equipos-apartados']
-                            );
-                        }
                         if (in_array('subscription', $enabled_modules) && auth()->user()->can('direct_sell.access')) {
                             $sub->url(
                                 action([\App\Http\Controllers\SellPosController::class, 'listSubscriptions']),
@@ -457,6 +420,88 @@ class AdminSidebarMenu
                     <path d="M3 12a9 9 0 0 0 18 0"></path>
                   </svg>', 'id' => 'tour_step7']
                 )->order(30);
+            }
+
+            //Cortes Diarios dropdown
+            if (auth()->user()->can('business_settings.access') || auth()->user()->can('view_purchase_n_sell_report')) {
+                $menu->dropdown(
+                    __('lang_v1.daily_cuts'),
+                    function ($sub) {
+                        if (auth()->user()->can('business_settings.access') || auth()->user()->can('view_purchase_n_sell_report')) {
+                            $sub->url(
+                                action([\App\Http\Controllers\DailyCutController::class, 'index']),
+                                __('lang_v1.daily_cuts'),
+                                ['icon' => '', 'active' => request()->segment(1) == 'daily-cuts']
+                            );
+                        }
+                    },
+                    ['icon' => '<svg aria-hidden="true" class="tw-size-5 tw-shrink-0" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                    <path stroke="none" d="M0 0h24v24H0z" fill="none"></path>
+                    <path d="M5 4h14a2 2 0 0 1 2 2v3a2 2 0 0 1 -2 2h-14a2 2 0 0 1 -2 -2v-3a2 2 0 0 1 2 -2"></path>
+                    <path d="M5 13h14a2 2 0 0 1 2 2v3a2 2 0 0 1 -2 2h-14a2 2 0 0 1 -2 -2v-3a2 2 0 0 1 2 -2"></path>
+                    <path d="M7 8v.01"></path>
+                    <path d="M7 17v.01"></path>
+                  </svg>', 'id' => 'menu-cortes']
+                )->order(31);
+            }
+
+            //Vendedores dropdown
+            if (auth()->user()->can('business_settings.access') || auth()->user()->can('view_purchase_n_sell_report')) {
+                $menu->dropdown(
+                    'Vendedores',
+                    function ($sub) {
+                        if (auth()->user()->can('business_settings.access') || auth()->user()->can('view_purchase_n_sell_report')) {
+                            $sub->url(
+                                action([\App\Http\Controllers\VendorReportController::class, 'weekly']),
+                                __('lang_v1.vendors_weekly_report'),
+                                ['icon' => '', 'active' => request()->segment(1) == 'vendor-reports']
+                            );
+                        }
+                        if (auth()->user()->can('business_settings.access')) {
+                            $sub->url(
+                                action([\App\Http\Controllers\CommissionTargetController::class, 'index']),
+                                __('lang_v1.commission_targets'),
+                                ['icon' => '', 'active' => request()->segment(1) == 'commission-targets']
+                            );
+                        }
+                    },
+                    ['icon' => '<svg aria-hidden="true" class="tw-size-5 tw-shrink-0" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                    <path stroke="none" d="M0 0h24v24H0z" fill="none"></path>
+                    <path d="M9 7m-4 0a4 4 0 1 0 8 0a4 4 0 1 0 -8 0"></path>
+                    <path d="M3 21v-2a4 4 0 0 1 4 -4h4a4 4 0 0 1 4 4v2"></path>
+                    <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+                    <path d="M21 21v-2a4 4 0 0 0 -3 -3.85"></path>
+                  </svg>', 'id' => 'menu-vendedores']
+                )->order(32);
+            }
+
+            //Técnicos dropdown
+            if (auth()->user()->can('business_settings.access') || auth()->user()->can('view_purchase_n_sell_report')) {
+                $menu->dropdown(
+                    __('lang_v1.technicians'),
+                    function ($sub) {
+                        if (auth()->user()->can('business_settings.access')) {
+                            $sub->url(
+                                action([\App\Http\Controllers\TechnicianController::class, 'index']),
+                                __('lang_v1.technicians'),
+                                ['icon' => '', 'active' => request()->segment(1) == 'technicians' && request()->segment(2) == null]
+                            );
+                        }
+                        if (auth()->user()->can('business_settings.access') || auth()->user()->can('view_purchase_n_sell_report')) {
+                            $sub->url(
+                                action([\App\Http\Controllers\TechnicianController::class, 'report']),
+                                __('lang_v1.technicians_report'),
+                                ['icon' => '', 'active' => request()->segment(1) == 'technicians' && request()->segment(2) == 'report']
+                            );
+                        }
+                    },
+                    ['icon' => '<svg aria-hidden="true" class="tw-size-5 tw-shrink-0" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                    <path stroke="none" d="M0 0h24v24H0z" fill="none"></path>
+                    <path d="M3 21h18"></path>
+                    <path d="M14 21v-4a2 2 0 0 0 -2 -2h-2a2 2 0 0 0 -2 2v4"></path>
+                    <path d="M5 21v-14l8 -4l8 4v14"></path>
+                  </svg>', 'id' => 'menu-technicians']
+                )->order(33);
             }
 
             //Stock transfer dropdown
@@ -868,6 +913,11 @@ class AdminSidebarMenu
                                 action([\App\Http\Controllers\BusinessLocationController::class, 'index']),
                                 __('business.business_locations'),
                                 ['icon' => '', 'active' => request()->segment(1) == 'business-location']
+                            );
+                            $sub->url(
+                                action([\App\Http\Controllers\CardTerminalController::class, 'index']),
+                                __('lang_v1.card_terminals'),
+                                ['icon' => '', 'active' => request()->segment(1) == 'card-terminals']
                             );
                         }
                         if (auth()->user()->can('invoice_settings.access')) {
