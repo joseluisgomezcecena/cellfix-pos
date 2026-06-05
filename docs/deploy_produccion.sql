@@ -218,6 +218,13 @@ PREPARE st FROM @s;
 EXECUTE st;
 DEALLOCATE PREPARE st;
 
+-- columna transaction_sell_lines.technician_commission_override (solo si no existe)
+SET @e := (SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'transaction_sell_lines' AND column_name = 'technician_commission_override');
+SET @s := IF(@e = 0, 'ALTER TABLE `transaction_sell_lines` ADD COLUMN `technician_commission_override` decimal(22,4) NULL', 'DO 1');
+PREPARE st FROM @s;
+EXECUTE st;
+DEALLOCATE PREPARE st;
+
 -- columna transactions.repair_status (solo si no existe)
 SET @e := (SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'transactions' AND column_name = 'repair_status');
 SET @s := IF(@e = 0, 'ALTER TABLE `transactions` ADD COLUMN `repair_status` varchar(20) NULL AFTER `status`', 'DO 1');
