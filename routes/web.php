@@ -417,6 +417,7 @@ Route::middleware(['setData', 'auth', 'SetSessionData', 'language', 'timezone', 
     Route::resource('card-terminals', \App\Http\Controllers\CardTerminalController::class);
     Route::get('/technicians/report', [\App\Http\Controllers\TechnicianController::class, 'report'])->name('technicians.report');
     Route::get('/technicians/export-report', [\App\Http\Controllers\TechnicianController::class, 'exportReport'])->name('technicians.export-report');
+    Route::post('/technicians/commission-override/{line_id}', [\App\Http\Controllers\TechnicianController::class, 'updateCommissionOverride'])->name('technicians.commission-override');
     Route::get('/technicians/repair-commissions', [\App\Http\Controllers\TechnicianController::class, 'repairCommissions'])->name('technicians.repair-commissions');
     Route::post('/technicians/repair-commissions', [\App\Http\Controllers\TechnicianController::class, 'saveRepairCommissions'])->name('technicians.save-repair-commissions');
     Route::resource('technicians', \App\Http\Controllers\TechnicianController::class);
@@ -433,6 +434,10 @@ Route::middleware(['setData', 'auth', 'SetSessionData', 'language', 'timezone', 
     Route::get('/stock-corrections/search-products', [\App\Http\Controllers\StockCorrectionController::class, 'searchProducts'])->name('stock-corrections.search-products');
     Route::post('/stock-corrections', [\App\Http\Controllers\StockCorrectionController::class, 'store'])->name('stock-corrections.store');
 
+    Route::get('/stock-bulk-adjust', [\App\Http\Controllers\StockBulkAdjustController::class, 'index'])->name('stock-bulk-adjust.index');
+    Route::get('/stock-bulk-adjust/template', [\App\Http\Controllers\StockBulkAdjustController::class, 'downloadTemplate'])->name('stock-bulk-adjust.template');
+    Route::post('/stock-bulk-adjust/import', [\App\Http\Controllers\StockBulkAdjustController::class, 'import'])->name('stock-bulk-adjust.import');
+
     Route::get('/sales-dashboard', [\App\Http\Controllers\SalesDashboardController::class, 'index'])->name('sales-dashboard.index');
     Route::post('/sales-dashboard/goal', [\App\Http\Controllers\SalesDashboardController::class, 'saveGoal'])->name('sales-dashboard.save-goal');
     Route::get('/sales-dashboard/export', [\App\Http\Controllers\SalesDashboardController::class, 'exportExcel'])->name('sales-dashboard.export');
@@ -441,6 +446,9 @@ Route::middleware(['setData', 'auth', 'SetSessionData', 'language', 'timezone', 
 
     Route::get('/repair-orders/pending', [\App\Http\Controllers\RepairOrderController::class, 'pending'])->name('repair-orders.pending');
     Route::post('/repair-orders/{id}/deliver', [\App\Http\Controllers\RepairOrderController::class, 'deliver'])->name('repair-orders.deliver');
+    Route::get('/repair-orders/admin', [\App\Http\Controllers\RepairOrderController::class, 'adminIndex'])->name('repair-orders.admin');
+    Route::get('/repair-orders/admin/search', [\App\Http\Controllers\RepairOrderController::class, 'adminSearch'])->name('repair-orders.admin-search');
+    Route::post('/repair-orders/{id}/change-technician', [\App\Http\Controllers\RepairOrderController::class, 'changeTechnician'])->name('repair-orders.change-technician');
 
     Route::get('/exchange-rate', [\App\Http\Controllers\ExchangeRateController::class, 'edit'])->name('exchange-rate.edit');
     Route::post('/exchange-rate', [\App\Http\Controllers\ExchangeRateController::class, 'update'])->name('exchange-rate.update');

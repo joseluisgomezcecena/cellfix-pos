@@ -30,13 +30,19 @@
                 <div class="col-md-3">
                     <div class="form-group">
                         {!! Form::label('start_date', __('messages.from') . ':') !!}
-                        {!! Form::date('start_date', $start_date, ['class' => 'form-control', 'style' => 'width: 100%']) !!}
+                        <div class="input-group">
+                            <span class="input-group-addon"><i class="fa fa-calendar"></i></span>
+                            {!! Form::text('start_date', $start_date, ['class' => 'form-control free-datepicker', 'id' => 'start_date', 'readonly', 'autocomplete' => 'off', 'style' => 'width: 100%; background-color: #fff;']) !!}
+                        </div>
                     </div>
                 </div>
                 <div class="col-md-3">
                     <div class="form-group">
                         {!! Form::label('end_date', __('messages.to') . ':') !!}
-                        {!! Form::date('end_date', $end_date, ['class' => 'form-control', 'style' => 'width: 100%']) !!}
+                        <div class="input-group">
+                            <span class="input-group-addon"><i class="fa fa-calendar"></i></span>
+                            {!! Form::text('end_date', $end_date, ['class' => 'form-control free-datepicker', 'id' => 'end_date', 'readonly', 'autocomplete' => 'off', 'style' => 'width: 100%; background-color: #fff;']) !!}
+                        </div>
                     </div>
                 </div>
                 <div class="col-md-3">
@@ -139,15 +145,15 @@
                 <div class="modal-body">
                     <div class="form-group">
                         {!! Form::label('export_start_date', __('lang_v1.week_start') . ':*') !!}
-                        <input type="date" class="form-control" id="export_start_date" name="start_date"
-                            value="{{ $start_date }}" required style="font-size: 16px; height: 42px;">
+                        <input type="text" class="form-control free-datepicker" id="export_start_date" name="start_date"
+                            value="{{ $start_date }}" required readonly autocomplete="off" style="font-size: 16px; height: 42px; background-color:#fff;">
                         <small class="text-muted">@lang('lang_v1.export_week_help')</small>
                     </div>
 
                     <div class="form-group">
                         {!! Form::label('export_end_date', __('messages.to') . ':*') !!}
-                        <input type="date" class="form-control" id="export_end_date" name="end_date"
-                            value="{{ $end_date }}" required readonly style="font-size: 16px; height: 42px;">
+                        <input type="text" class="form-control free-datepicker" id="export_end_date" name="end_date"
+                            value="{{ $end_date }}" required readonly autocomplete="off" style="font-size: 16px; height: 42px; background-color:#fff;">
                         <small class="text-muted">@lang('lang_v1.auto_calculated_end_date')</small>
                     </div>
 
@@ -176,8 +182,13 @@
 
 @section('javascript')
 <script>
-    // When the user picks a start date, auto-compute end date = start + 6 days
     $(document).ready(function() {
+        // Datepicker libre (semana inicia en sábado para visualización)
+        $('.free-datepicker').datepicker({
+            format: 'yyyy-mm-dd', autoclose: true, todayHighlight: true, weekStart: 6
+        });
+
+        // When the user picks a start date, auto-compute end date = start + 6 days
         $('#export_start_date').on('change', function() {
             var start = new Date($(this).val());
             if (!isNaN(start.getTime())) {

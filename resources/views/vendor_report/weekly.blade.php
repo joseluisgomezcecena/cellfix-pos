@@ -17,7 +17,7 @@
             <div class="row">
                 <div class="col-md-3">
                     <div class="form-group">
-                        {!! Form::label('start_date', 'Inicio de semana (lunes):') !!}
+                        {!! Form::label('start_date', 'Inicio de semana (sábado):') !!}
                         <div class="input-group">
                             <span class="input-group-addon"><i class="fa fa-calendar"></i></span>
                             {!! Form::text('start_date', $start_date, ['class' => 'form-control', 'id' => 'start_date', 'readonly', 'autocomplete' => 'off', 'style' => 'width: 100%; background-color:#fff;']) !!}
@@ -227,13 +227,13 @@
 @section('javascript')
 <script type="text/javascript">
     $(document).ready(function () {
-        // Date picker: solo permite seleccionar lunes (inicio de semana)
+        // Date picker: solo permite seleccionar sábados (inicio de semana Sat→Fri)
         $('#start_date').datepicker({
             format: 'yyyy-mm-dd',
             autoclose: true,
             todayHighlight: true,
-            weekStart: 1,
-            daysOfWeekDisabled: [0, 2, 3, 4, 5, 6]
+            weekStart: 6,
+            daysOfWeekDisabled: [0, 1, 2, 3, 4, 5]
         });
     });
 </script>

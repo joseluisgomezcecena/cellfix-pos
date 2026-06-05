@@ -43,7 +43,13 @@ class EnsureDailyCutAt6PM
         }
 
         $now = Carbon::now();
-        // Only fires from 6 PM onwards.
+
+        // Finalización de AYER (cualquier hora del día):
+        // Si el corte de ayer fue generado antes de medianoche (típicamente la foto de 6 PM),
+        // regenerarlo una sola vez para capturar ventas tardías 6:01 PM → 23:59 PM.
+        $this->maybeFinalizeYesterday($business_id, $now);
+
+        // Auto-cut de HOY: solo se dispara después de las 18:00.
         if ($now->hour < 18) {
             return;
         }
@@ -79,6 +85,48 @@ class EnsureDailyCutAt6PM
             $util->generateForBusiness($business_id, $today, null);
             \Log::info("[daily-cut-heartbeat] auto-generated cuts business={$business_id} date={$today}");
             Cache::put($doneKey, 1, $now->copy()->endOfDay()->diffInSeconds($now));
+        } finally {
+            Cache::forget($lockKey);
+        }
+    }
+
+    /**
+     * Regenera el corte de AYER una sola vez al día si fue generado antes de medianoche
+     * (la foto de las 6 PM no incluye ventas posteriores hasta 23:59).
+     */
+    private function maybeFinalizeYesterday($business_id, $now)
+    {
+        $yesterday = $now->copy()->subDay()->toDateString();
+        $today_midnight = $now->copy()->startOfDay();
+
+        // Cache: una sola finalización por business × día.
+        $finalKey = 'daily_cut_finalize_yesterday_' . $business_id . '_' . $yesterday;
+        if (Cache::has($finalKey)) {
+            return;
+        }
+
+        // ¿Algún corte de ayer está aún con la foto vieja (anterior a hoy 00:00)?
+        $needsFinalize = DailyCut::where('business_id', $business_id)
+            ->where('cut_date', $yesterday)
+            ->where('generated_at', '<', $today_midnight)
+            ->exists();
+
+        if (!$needsFinalize) {
+            Cache::put($finalKey, 1, $now->copy()->endOfDay()->diffInSeconds($now));
+            return;
+        }
+
+        $lockKey = 'daily_cut_finalize_yesterday_lock_' . $business_id . '_' . $yesterday;
+        if (Cache::has($lockKey)) {
+            return;
+        }
+        Cache::put($lockKey, 1, 120);
+
+        try {
+            $util = app(DailyCutUtil::class);
+            $util->generateForBusiness($business_id, $yesterday, null);
+            \Log::info("[daily-cut-heartbeat] finalize yesterday business={$business_id} date={$yesterday}");
+            Cache::put($finalKey, 1, $now->copy()->endOfDay()->diffInSeconds($now));
         } finally {
             Cache::forget($lockKey);
         }

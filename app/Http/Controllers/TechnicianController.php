@@ -234,8 +234,9 @@ class TechnicianController extends Controller
         $start_date = $request->get('start_date');
         if (empty($start_date)) {
             $today = \Carbon\Carbon::now();
-            $daysSinceMonday = ($today->dayOfWeek + 6) % 7;
-            $start_date = $today->copy()->subDays($daysSinceMonday)->toDateString();
+            // Semana de SÁBADO a VIERNES (no Mon→Sun). Sat dayOfWeek=6.
+            $daysSinceStart = ($today->dayOfWeek + 1) % 7;
+            $start_date = $today->copy()->subDays($daysSinceStart)->toDateString();
         }
         $start = \Carbon\Carbon::parse($start_date)->startOfDay();
         $end = $start->copy()->addDays(6)->endOfDay();
@@ -288,6 +289,7 @@ class TechnicianController extends Controller
                 'tsl.line_discount_amount',
                 'tsl.repair_entry_date',
                 'tsl.repair_anticipo',
+                'tsl.technician_commission_override',
                 't.invoice_no',
                 't.transaction_date',
                 't.location_id',
@@ -345,7 +347,11 @@ class TechnicianController extends Controller
             $week_commission = 0;
             foreach ($tech_lines as $line) {
                 $line_total = (float) $line->unit_price_inc_tax * (float) $line->quantity - (float) $line->line_discount_amount;
-                $line_commission = (float) ($repair_commissions[$line->product_id] ?? 0);
+                // Si la línea tiene un override manual de comisión, usar ese; si no, la comisión por producto.
+                $commission_overridden = !is_null($line->technician_commission_override);
+                $line_commission = $commission_overridden
+                    ? (float) $line->technician_commission_override
+                    : (float) ($repair_commissions[$line->product_id] ?? 0);
                 $day_key = \Carbon\Carbon::parse($line->transaction_date)->toDateString();
                 if (!isset($by_day[$day_key])) {
                     $by_day[$day_key] = [
@@ -364,6 +370,7 @@ class TechnicianController extends Controller
                 $debe = max(0, round($line_total - $paid_share, 2));
 
                 $by_day[$day_key]['lines'][] = [
+                    'line_id' => $line->line_id,
                     'invoice_no' => $line->invoice_no,
                     'customer' => $line->customer_name ?? '—',
                     'product' => $line->product_name,
@@ -378,6 +385,7 @@ class TechnicianController extends Controller
                     'transaction_date' => $line->transaction_date,
                     'vendor' => trim($line->vendedor),
                     'commission' => $line_commission,
+                    'commission_overridden' => $commission_overridden,
                 ];
                 $by_day[$day_key]['subtotal'] += $line_total;
                 $by_day[$day_key]['count']++;
@@ -409,8 +417,9 @@ class TechnicianController extends Controller
         $start_date = $request->get('start_date');
         if (empty($start_date)) {
             $today = \Carbon\Carbon::now();
-            $daysSinceMonday = ($today->dayOfWeek + 6) % 7;
-            $start_date = $today->copy()->subDays($daysSinceMonday)->toDateString();
+            // Semana de SÁBADO a VIERNES (no Mon→Sun). Sat dayOfWeek=6.
+            $daysSinceStart = ($today->dayOfWeek + 1) % 7;
+            $start_date = $today->copy()->subDays($daysSinceStart)->toDateString();
         }
         $start = \Carbon\Carbon::parse($start_date)->startOfDay();
         $end = $start->copy()->addDays(6)->endOfDay();
@@ -444,5 +453,53 @@ class TechnicianController extends Controller
         }
 
         return $output;
+    }
+
+    /**
+     * Establece o limpia un override manual del pago al técnico para UNA línea de venta.
+     * - amount NULL o vacío => limpia el override y vuelve a usar la comisión por producto.
+     * - amount >= 0         => guarda el override y lo usa en el reporte.
+     */
+    public function updateCommissionOverride(\Illuminate\Http\Request $request, $line_id)
+    {
+        if (!auth()->user()->can('business_settings.access')) {
+            return response()->json(['success' => 0, 'msg' => 'No autorizado'], 403);
+        }
+
+        $request->validate([
+            'amount' => 'nullable|numeric|min:0',
+        ]);
+
+        $business_id = $request->session()->get('user.business_id');
+
+        try {
+            // Verificar que la línea pertenezca a este business
+            $line = \DB::table('transaction_sell_lines as tsl')
+                ->join('transactions as t', 't.id', '=', 'tsl.transaction_id')
+                ->where('tsl.id', $line_id)
+                ->where('t.business_id', $business_id)
+                ->select('tsl.id')
+                ->first();
+
+            if (!$line) {
+                return response()->json(['success' => 0, 'msg' => 'Línea no encontrada']);
+            }
+
+            $amount = $request->input('amount', null);
+            $value = ($amount === null || $amount === '') ? null : (float) $amount;
+
+            \DB::table('transaction_sell_lines')
+                ->where('id', $line_id)
+                ->update(['technician_commission_override' => $value]);
+
+            return response()->json([
+                'success' => 1,
+                'msg' => $value === null ? 'Pago restaurado al monto calculado' : 'Pago actualizado correctamente',
+                'new_value' => $value,
+            ]);
+        } catch (\Exception $e) {
+            \Log::emergency('File:'.$e->getFile().'Line:'.$e->getLine().'Message:'.$e->getMessage());
+            return response()->json(['success' => 0, 'msg' => __('messages.something_went_wrong')]);
+        }
     }
 }

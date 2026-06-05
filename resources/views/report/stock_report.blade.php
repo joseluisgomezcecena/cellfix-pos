@@ -44,6 +44,12 @@
                         {!! Form::select('unit', $units, null, ['placeholder' => __('messages.all'), 'class' => 'form-control select2', 'style' => 'width:100%']); !!}
                     </div>
                 </div>
+                <div class="col-md-3">
+                    <div class="form-group">
+                        {!! Form::label('stock_status', 'Filtrar existencias:') !!}
+                        {!! Form::select('stock_status', ['all' => 'Todo', 'in_stock' => 'Solo existentes'], 'all', ['class' => 'form-control select2', 'style' => 'width:100%', 'id' => 'stock_status']); !!}
+                    </div>
+                </div>
                 @if($show_manufacturing_data)
                     <div class="col-md-3">
                         <div class="form-group">

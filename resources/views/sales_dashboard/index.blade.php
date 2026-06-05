@@ -45,8 +45,11 @@
     @component('components.widget', ['class' => 'box-solid'])
         {!! Form::open(['url' => route('sales-dashboard.index'), 'method' => 'get', 'class' => 'form-inline']) !!}
         <div class="form-group">
-            {!! Form::label('start_date', __('lang_v1.week_start_monday') . ':') !!}
-            {!! Form::date('start_date', $start_date, ['class' => 'form-control']) !!}
+            {!! Form::label('start_date', 'Inicio de semana (sábado):') !!}
+            <div class="input-group">
+                <span class="input-group-addon"><i class="fa fa-calendar"></i></span>
+                {!! Form::text('start_date', $start_date, ['class' => 'form-control sat-only-datepicker', 'id' => 'start_date', 'readonly', 'autocomplete' => 'off', 'style' => 'background-color:#fff;']) !!}
+            </div>
         </div>
         <div class="form-group" style="margin-left:10px;">
             {!! Form::label('location_id', __('purchase.business_location') . ':') !!}
@@ -245,6 +248,10 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script type="text/javascript">
     $(document).ready(function () {
+        $('.sat-only-datepicker').datepicker({
+            format: 'yyyy-mm-dd', autoclose: true, todayHighlight: true,
+            weekStart: 6, daysOfWeekDisabled: [0,1,2,3,4,5]
+        });
         if ($.fn.DataTable) {
             $('#equipos_detail_table').DataTable({ pageLength: 25, order: [] });
         }

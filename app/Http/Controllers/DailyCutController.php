@@ -84,8 +84,9 @@ class DailyCutController extends Controller
         if (empty($start_date)) {
             $today = Carbon::now();
             // Monday is day-of-week 1 in Carbon (with Sunday=0)
-            $daysSinceMonday = ($today->dayOfWeek + 6) % 7;
-            $start_date = $today->copy()->subDays($daysSinceMonday)->toDateString();
+            // Semana de SÁBADO a VIERNES (no Mon→Sun). Sat dayOfWeek=6.
+            $daysSinceStart = ($today->dayOfWeek + 1) % 7;
+            $start_date = $today->copy()->subDays($daysSinceStart)->toDateString();
         }
         $start = Carbon::parse($start_date);
         $end = $start->copy()->addDays(6);
@@ -152,8 +153,9 @@ class DailyCutController extends Controller
         $start_date = $request->get('start_date');
         if (empty($start_date)) {
             $today = Carbon::now();
-            $daysSinceMonday = ($today->dayOfWeek + 6) % 7;
-            $start_date = $today->copy()->subDays($daysSinceMonday)->toDateString();
+            // Semana de SÁBADO a VIERNES (no Mon→Sun). Sat dayOfWeek=6.
+            $daysSinceStart = ($today->dayOfWeek + 1) % 7;
+            $start_date = $today->copy()->subDays($daysSinceStart)->toDateString();
         }
         $start = Carbon::parse($start_date);
         $end = $start->copy()->addDays(6);
@@ -341,6 +343,8 @@ class DailyCutController extends Controller
         $location_ids = $loc_query->pluck('id');
 
         $today_str = Carbon::now()->toDateString();
+        $yesterday_str = Carbon::yesterday()->toDateString();
+        $today_midnight = Carbon::today(); // hoy 00:00:00
         $current = Carbon::parse($start_date);
         $end = Carbon::parse($end_date);
         $user_id = request()->session()->get('user.id');
@@ -353,12 +357,26 @@ class DailyCutController extends Controller
         while ($current->lte($end)) {
             $date_str = $current->toDateString();
             foreach ($location_ids as $loc_id) {
-                $exists = DailyCut::where('business_id', $business_id)
+                $cut = DailyCut::where('business_id', $business_id)
                     ->where('location_id', $loc_id)
                     ->where('cut_date', $date_str)
-                    ->exists();
-                // Always regenerate today to capture new sales; only fill in past days if missing
-                if (!$exists || $date_str === $today_str) {
+                    ->first();
+
+                $regenerate = false;
+                if (!$cut) {
+                    // No existe la foto: generarla.
+                    $regenerate = true;
+                } elseif ($date_str === $today_str) {
+                    // Hoy: siempre regenerar para capturar nuevas ventas.
+                    $regenerate = true;
+                } elseif ($date_str === $yesterday_str && $cut->generated_at < $today_midnight) {
+                    // Ayer: si la foto se tomó antes de cerrar el día (caso típico: 6 PM auto-cut),
+                    // regenerar una vez después de medianoche para capturar ventas tardías
+                    // (ej. cliente que llega 5:59 PM y la venta se registra 6:05 PM).
+                    $regenerate = true;
+                }
+
+                if ($regenerate) {
                     $this->util->upsert($business_id, $loc_id, $date_str, $user_id);
                 }
             }
@@ -415,8 +433,9 @@ class DailyCutController extends Controller
         $start_date = $request->get('start_date');
         if (empty($start_date)) {
             $today = Carbon::now();
-            $daysSinceMonday = ($today->dayOfWeek + 6) % 7;
-            $start_date = $today->copy()->subDays($daysSinceMonday)->toDateString();
+            // Semana de SÁBADO a VIERNES (no Mon→Sun). Sat dayOfWeek=6.
+            $daysSinceStart = ($today->dayOfWeek + 1) % 7;
+            $start_date = $today->copy()->subDays($daysSinceStart)->toDateString();
         }
         $location_id = $request->get('location_id');
 

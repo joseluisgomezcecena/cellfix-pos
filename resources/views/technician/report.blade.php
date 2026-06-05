@@ -17,8 +17,11 @@
             <div class="row">
                 <div class="col-md-3">
                     <div class="form-group">
-                        {!! Form::label('start_date', __('lang_v1.week_start') . ':') !!}
-                        {!! Form::date('start_date', $start_date, ['class' => 'form-control', 'style' => 'width: 100%']) !!}
+                        {!! Form::label('start_date', __('lang_v1.week_start') . ' (sábado):') !!}
+                        <div class="input-group">
+                            <span class="input-group-addon"><i class="fa fa-calendar"></i></span>
+                            {!! Form::text('start_date', $start_date, ['class' => 'form-control sat-only-datepicker', 'id' => 'start_date', 'readonly', 'autocomplete' => 'off', 'style' => 'width: 100%; background-color: #fff;']) !!}
+                        </div>
                     </div>
                 </div>
                 <div class="col-md-3">
@@ -132,7 +135,22 @@
                                                 <td>{{ $line['location'] }}</td>
                                                 <td>{{ $line['vendor'] ?: '—' }}</td>
                                                 @if($show_commission)
-                                                    <td class="text-right">{{ number_format($line['commission'] ?? 0, 2) }}</td>
+                                                    <td class="text-right" style="white-space: nowrap;">
+                                                        <span class="commission-value" data-line-id="{{ $line['line_id'] }}"
+                                                            style="{{ !empty($line['commission_overridden']) ? 'color:#2196f3;font-weight:bold;' : '' }}"
+                                                            title="{{ !empty($line['commission_overridden']) ? 'Pago manual (override)' : 'Pago calculado' }}">
+                                                            ${{ number_format($line['commission'] ?? 0, 2) }}
+                                                        </span>
+                                                        <button type="button" class="btn btn-xs btn-link edit-commission-btn"
+                                                            data-line-id="{{ $line['line_id'] }}"
+                                                            data-current="{{ $line['commission'] ?? 0 }}"
+                                                            data-overridden="{{ !empty($line['commission_overridden']) ? 1 : 0 }}"
+                                                            data-product="{{ $line['product'] }}"
+                                                            data-invoice="{{ $line['invoice_no'] }}"
+                                                            title="Editar pago manual">
+                                                            <i class="fas fa-pen" style="color:#2196f3;"></i>
+                                                        </button>
+                                                    </td>
                                                 @endif
                                             </tr>
                                         @endforeach
@@ -167,4 +185,108 @@
     @endforelse
 </section>
 
+{{-- Modal para editar el pago al técnico (override manual) --}}
+<div class="modal fade" id="edit_commission_modal" tabindex="-1" role="dialog">
+    <div class="modal-dialog" role="document">
+        <div class="modal-content">
+            <div class="modal-header" style="background-color: #2196f3; color: #fff;">
+                <button type="button" class="close" data-dismiss="modal" style="color: #fff;">&times;</button>
+                <h4 class="modal-title"><i class="fas fa-pen"></i> Editar pago al técnico</h4>
+            </div>
+            <div class="modal-body">
+                <p>
+                    <strong>Folio:</strong> <span id="ec_invoice"></span><br>
+                    <strong>Producto:</strong> <span id="ec_product" class="text-muted"></span>
+                </p>
+                <hr>
+                <div class="form-group">
+                    <label>Pago al técnico (MXN $):</label>
+                    <input type="number" id="ec_amount" min="0" step="0.01" class="form-control"
+                        placeholder="ej. 250.00">
+                    <small class="text-muted">
+                        Este valor reemplaza el cálculo automático de comisiones para esta línea.
+                    </small>
+                </div>
+                <input type="hidden" id="ec_line_id">
+            </div>
+            <div class="modal-footer" style="display: flex; justify-content: space-between;">
+                <button type="button" class="btn btn-warning" id="ec_clear_btn" title="Borrar el override y volver a la comisión calculada">
+                    <i class="fas fa-undo"></i> Restaurar comisión calculada
+                </button>
+                <div>
+                    <button type="button" class="btn btn-default" data-dismiss="modal">Cancelar</button>
+                    <button type="button" class="btn btn-primary" id="ec_save_btn">
+                        <i class="fas fa-save"></i> Guardar pago manual
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 @stop
+
+@section('javascript')
+<script type="text/javascript">
+$(document).ready(function () {
+    // Datepicker — solo sábados (inicio de semana)
+    $('.sat-only-datepicker').datepicker({
+        format: 'yyyy-mm-dd', autoclose: true, todayHighlight: true,
+        weekStart: 6, daysOfWeekDisabled: [0,1,2,3,4,5]
+    });
+
+    $(document).on('click', '.edit-commission-btn', function () {
+        var b = $(this);
+        $('#ec_line_id').val(b.data('line-id'));
+        $('#ec_amount').val(parseFloat(b.data('current')).toFixed(2));
+        $('#ec_invoice').text(b.data('invoice') || '—');
+        $('#ec_product').text(b.data('product') || '—');
+        $('#edit_commission_modal').modal('show');
+    });
+
+    function submitCommissionOverride(amount) {
+        var line_id = $('#ec_line_id').val();
+        if (!line_id) return;
+        $('#ec_save_btn, #ec_clear_btn').prop('disabled', true);
+        $.ajax({
+            method: 'POST',
+            url: '/technicians/commission-override/' + line_id,
+            data: {
+                amount: amount,
+                _token: '{{ csrf_token() }}'
+            },
+            dataType: 'json',
+            success: function (res) {
+                $('#ec_save_btn, #ec_clear_btn').prop('disabled', false);
+                if (res.success) {
+                    toastr.success(res.msg);
+                    $('#edit_commission_modal').modal('hide');
+                    // Recargar para recalcular totales (semana + comisión due del técnico)
+                    setTimeout(function () { window.location.reload(); }, 500);
+                } else {
+                    toastr.error(res.msg);
+                }
+            },
+            error: function () {
+                $('#ec_save_btn, #ec_clear_btn').prop('disabled', false);
+                toastr.error('Error al actualizar pago');
+            }
+        });
+    }
+
+    $('#ec_save_btn').click(function () {
+        var amount = $('#ec_amount').val();
+        if (amount === '' || isNaN(parseFloat(amount)) || parseFloat(amount) < 0) {
+            toastr.warning('Ingresa un monto válido (0 o mayor)');
+            return;
+        }
+        submitCommissionOverride(amount);
+    });
+
+    $('#ec_clear_btn').click(function () {
+        if (!confirm('¿Restaurar el pago al monto calculado automáticamente?')) return;
+        submitCommissionOverride('');
+    });
+});
+</script>
+@endsection

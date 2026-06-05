@@ -494,6 +494,13 @@ class AdminSidebarMenu
                                 ['icon' => '', 'active' => request()->segment(1) == 'technicians' && request()->segment(2) == 'report']
                             );
                         }
+                        if (auth()->user()->can('business_settings.access')) {
+                            $sub->url(
+                                action([\App\Http\Controllers\RepairOrderController::class, 'adminIndex']),
+                                'Administrar Reparaciones',
+                                ['icon' => '', 'active' => request()->segment(1) == 'repair-orders' && request()->segment(2) == 'admin']
+                            );
+                        }
                     },
                     ['icon' => '<svg aria-hidden="true" class="tw-size-5 tw-shrink-0" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
                     <path stroke="none" d="M0 0h24v24H0z" fill="none"></path>
@@ -918,6 +925,11 @@ class AdminSidebarMenu
                                 action([\App\Http\Controllers\CardTerminalController::class, 'index']),
                                 __('lang_v1.card_terminals'),
                                 ['icon' => '', 'active' => request()->segment(1) == 'card-terminals']
+                            );
+                            $sub->url(
+                                action([\App\Http\Controllers\StockBulkAdjustController::class, 'index']),
+                                'Ajuste Masivo de Stock',
+                                ['icon' => '', 'active' => request()->segment(1) == 'stock-bulk-adjust']
                             );
                         }
                         if (auth()->user()->can('invoice_settings.access')) {

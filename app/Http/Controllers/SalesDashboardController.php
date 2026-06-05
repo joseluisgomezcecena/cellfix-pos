@@ -56,8 +56,9 @@ class SalesDashboardController extends Controller
         $start_date = $request->get('start_date');
         if (empty($start_date)) {
             $today = Carbon::now();
-            $daysSinceMonday = ($today->dayOfWeek + 6) % 7;
-            $start_date = $today->copy()->subDays($daysSinceMonday)->toDateString();
+            // Semana de SÁBADO a VIERNES (no Mon→Sun). Sat dayOfWeek=6.
+            $daysSinceStart = ($today->dayOfWeek + 1) % 7;
+            $start_date = $today->copy()->subDays($daysSinceStart)->toDateString();
         }
         $start = Carbon::parse($start_date)->startOfDay();
         $end = $start->copy()->addDays(6)->endOfDay();

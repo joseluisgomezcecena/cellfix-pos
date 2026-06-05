@@ -17,8 +17,11 @@
             <div class="row">
                 <div class="col-md-3">
                     <div class="form-group">
-                        {!! Form::label('start_date', __('lang_v1.week_start') . ':') !!}
-                        {!! Form::date('start_date', $start_date, ['class' => 'form-control', 'style' => 'width: 100%']) !!}
+                        {!! Form::label('start_date', __('lang_v1.week_start') . ' (sábado):') !!}
+                        <div class="input-group">
+                            <span class="input-group-addon"><i class="fa fa-calendar"></i></span>
+                            {!! Form::text('start_date', $start_date, ['class' => 'form-control sat-only-datepicker', 'id' => 'start_date', 'readonly', 'autocomplete' => 'off', 'style' => 'width: 100%; background-color: #fff;']) !!}
+                        </div>
                     </div>
                 </div>
                 <div class="col-md-3">
@@ -182,3 +185,14 @@
 </section>
 
 @stop
+
+@section('javascript')
+<script type="text/javascript">
+$(document).ready(function () {
+    $('.sat-only-datepicker').datepicker({
+        format: 'yyyy-mm-dd', autoclose: true, todayHighlight: true,
+        weekStart: 6, daysOfWeekDisabled: [0,1,2,3,4,5]
+    });
+});
+</script>
+@endsection

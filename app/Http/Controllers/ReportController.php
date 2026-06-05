@@ -362,6 +362,11 @@ class ReportController extends Controller
             $for = request()->input('for') == 'view_product' ? 'view_product' : 'datatables';
 
             $products = $this->productUtil->getProductStockDetails($business_id, $filters, $for);
+
+            // Filtro "Solo existentes": esconder filas con stock <= 0 (la columna stock = SUM(vld.qty_available))
+            if (request()->input('stock_status') === 'in_stock') {
+                $products->having('stock', '>', 0);
+            }
             //To show stock details on view product modal
             if ($for == 'view_product' && ! empty(request()->input('product_id'))) {
                 $product_stock_details = $products;
