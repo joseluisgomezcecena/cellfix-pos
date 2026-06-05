@@ -196,4 +196,147 @@ class RepairOrderController extends Controller
 
         return $output;
     }
+
+    /**
+     * Sección administrativa: ver todas las reparaciones (pendientes o entregadas)
+     * y cambiar el técnico asignado en caso de error de captura desde el POS.
+     */
+    public function adminIndex()
+    {
+        if (! auth()->user()->can('business_settings.access')) {
+            abort(403, 'Unauthorized action.');
+        }
+
+        $business_id = request()->session()->get('user.business_id');
+
+        $technicians = Technician::where('business_id', $business_id)
+            ->where('is_active', 1)
+            ->orderBy('name')
+            ->get(['id', 'name']);
+
+        return view('repair_order.admin_index', compact('technicians'));
+    }
+
+    /**
+     * Búsqueda AJAX de reparaciones para la sección administrativa.
+     * Acepta término de búsqueda (nombre cliente, teléfono, folio o nombre de producto)
+     * y opcionalmente filtra por estatus (pending/delivered).
+     */
+    public function adminSearch(Request $request)
+    {
+        if (! auth()->user()->can('business_settings.access')) {
+            abort(403, 'Unauthorized action.');
+        }
+
+        $business_id = $request->session()->get('user.business_id');
+        $term = trim($request->get('term', ''));
+        $status = $request->get('status', '');
+
+        $q = DB::table('transactions as t')
+            ->leftJoin('contacts as c', 'c.id', '=', 't.contact_id')
+            ->where('t.business_id', $business_id)
+            ->where('t.type', 'sell')
+            ->whereNotNull('t.repair_status');
+
+        if (in_array($status, ['pending', 'delivered'])) {
+            $q->where('t.repair_status', $status);
+        }
+
+        if ($term !== '') {
+            $q->where(function ($w) use ($term) {
+                $w->where('c.name', 'like', "%{$term}%")
+                    ->orWhere('c.mobile', 'like', "%{$term}%")
+                    ->orWhere('c.supplier_business_name', 'like', "%{$term}%")
+                    ->orWhere('t.invoice_no', 'like', "%{$term}%")
+                    ->orWhereIn('t.id', function ($sub) use ($term) {
+                        $sub->select('tsl.transaction_id')
+                            ->from('transaction_sell_lines as tsl')
+                            ->join('products as p', 'p.id', '=', 'tsl.product_id')
+                            ->where('p.name', 'like', "%{$term}%");
+                    });
+            });
+        }
+
+        $orders = $q->select(
+            't.id', 't.invoice_no', 't.transaction_date', 't.repair_status', 't.final_total',
+            'c.name as customer', 'c.mobile'
+        )->orderBy('t.transaction_date', 'desc')->limit(50)->get();
+
+        $result = [];
+        foreach ($orders as $o) {
+            // Producto(s) y técnico(s) actualmente asignados (puede ser uno o varios distintos)
+            $lines = DB::table('transaction_sell_lines as tsl')
+                ->join('products as p', 'p.id', '=', 'tsl.product_id')
+                ->leftJoin('technicians as tc', 'tc.id', '=', 'tsl.technician_id')
+                ->where('tsl.transaction_id', $o->id)
+                ->select('p.name as product_name', 'tc.id as technician_id', 'tc.name as technician_name')
+                ->get();
+
+            $products = $lines->pluck('product_name')->unique()->implode(', ');
+            $technicians = $lines->pluck('technician_name')->filter()->unique()->implode(', ');
+            $current_technician_id = $lines->pluck('technician_id')->filter()->unique();
+            // Si todas las líneas tienen el mismo técnico, devolvemos ese id; si difieren, null.
+            $current_technician_id = $current_technician_id->count() === 1 ? $current_technician_id->first() : null;
+
+            $result[] = [
+                'id' => $o->id,
+                'invoice_no' => $o->invoice_no,
+                'date' => Carbon::parse($o->transaction_date)->format('d/m/Y H:i'),
+                'customer' => $o->customer ?: 'Walk-In',
+                'mobile' => $o->mobile,
+                'products' => $products,
+                'technician' => $technicians ?: '— sin asignar —',
+                'current_technician_id' => $current_technician_id,
+                'repair_status' => $o->repair_status,
+                'total' => (float) $o->final_total,
+            ];
+        }
+
+        return response()->json(['orders' => $result]);
+    }
+
+    /**
+     * Cambia el técnico asignado a TODAS las líneas de una orden de reparación.
+     */
+    public function changeTechnician(Request $request, $id)
+    {
+        if (! auth()->user()->can('business_settings.access')) {
+            abort(403, 'Unauthorized action.');
+        }
+
+        $request->validate([
+            'technician_id' => 'nullable|integer',
+        ]);
+
+        $business_id = $request->session()->get('user.business_id');
+
+        try {
+            $transaction = Transaction::where('business_id', $business_id)
+                ->where('id', $id)
+                ->whereNotNull('repair_status')
+                ->firstOrFail();
+
+            $technician_id = $request->input('technician_id') ?: null;
+
+            // Validar que el técnico (si se especifica) pertenezca al business
+            if (!empty($technician_id)) {
+                $exists = Technician::where('business_id', $business_id)
+                    ->where('id', $technician_id)
+                    ->exists();
+                if (!$exists) {
+                    return response()->json(['success' => 0, 'msg' => 'Técnico no válido']);
+                }
+            }
+
+            TransactionSellLine::where('transaction_id', $transaction->id)
+                ->update(['technician_id' => $technician_id]);
+
+            $output = ['success' => 1, 'msg' => 'Técnico actualizado correctamente'];
+        } catch (\Exception $e) {
+            \Log::emergency('File:'.$e->getFile().'Line:'.$e->getLine().'Message:'.$e->getMessage());
+            $output = ['success' => 0, 'msg' => __('messages.something_went_wrong')];
+        }
+
+        return response()->json($output);
+    }
 }
