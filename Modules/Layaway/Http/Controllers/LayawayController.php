@@ -297,12 +297,14 @@ class LayawayController extends Controller
                     throw new \Exception('Variation ID is required for product: ' . $product_model->name);
                 }
 
-                try {
-                    $location_details = $this->productUtil->getDetailsFromVariation($variation_id, $business_id, $request->business_location_id, false);
-                    $qty_available = $location_details['qty_available'] ?? 0;
-                } catch (\Exception $e) {
-                    throw new \Exception('Could not get stock details for product: ' . $product_model->name . '. This may indicate the product is not available at the selected location. Error: ' . $e->getMessage());
-                }
+                // Leemos qty_available directo desde variation_location_details para EVITAR
+                // un bug en ProductUtil::getDetailsFromVariation que no respeta location_id
+                // cuando se llama con check_qty=false y la variación tiene VLD en varias
+                // sucursales (MySQL devuelve una fila al azar y reporta qty=0 aunque haya stock).
+                $qty_available = (float) (\DB::table('variation_location_details')
+                    ->where('variation_id', $variation_id)
+                    ->where('location_id', $request->business_location_id)
+                    ->value('qty_available') ?? 0);
 
                 if ($product['quantity'] > $qty_available) {
                     throw new \Exception('Insufficient stock for product: ' . $product_model->name . '. Available: ' . $qty_available . ', Requested: ' . $product['quantity']);

@@ -230,15 +230,12 @@ $(document).ready(function(){
                 },
                 minLength: 2,
                 response: function(event, ui) {
-                    if (ui.content.length == 1) {
-                        ui.item = ui.content[0];
-                        $(this).data('selected_product', ui.item);
-                        $(this).val(ui.item.name);
-                        $(this).trigger('product_selected');
-                        setTimeout(function(){
-                            $('#search_product_for_layaway').select();
-                        }, 500);
-                    } else if (ui.content.length == 0) {
+                    // NOTA: antes este callback disparaba product_selected automáticamente
+                    // cuando había 1 solo resultado, pero eso causaba que el evento se
+                    // disparara DOS veces (también desde select abajo) y la cantidad
+                    // siempre quedara en 2. Ahora dejamos que el usuario haga clic / Enter
+                    // y solo `select` dispara product_selected (una sola vez).
+                    if (ui.content.length == 0) {
                         toastr.error('No products found');
                         $('#search_product_for_layaway').select();
                     }
