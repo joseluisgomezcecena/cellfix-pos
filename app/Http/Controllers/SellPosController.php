@@ -1780,7 +1780,10 @@ class SellPosController extends Controller
 
             // Technicians dropdown: ANY technician of the business can be picked (regardless of location)
             $technicians = \App\Technician::forDropdown($business_id);
-            $is_repair_brand = !empty($product->brand) && stripos((string) $product->brand, 'reparac') !== false;
+            // Marcas que requieren asignación de técnico al vender. Reparaciones, Servicios
+            // y Cortos se consideran "trabajos de técnico" — para que aparezcan en el reporte
+            // de técnicos hay que asignarlos en el POS.
+            $is_repair_brand = !empty($product->brand) && preg_match('/(reparac|servic|corto)/i', (string) $product->brand) === 1;
 
             $output['html_content'] = view('sale_pos.product_row')
                 ->with(compact('product', 'row_count', 'tax_dropdown', 'enabled_modules', 'pos_settings', 'sub_units', 'discount', 'waiters', 'edit_discount', 'edit_price', 'purchase_line_id', 'warranties', 'quantity', 'is_direct_sell', 'so_line', 'is_sales_order', 'last_sell_line', 'is_serial_no', 'technicians', 'is_repair_brand'))

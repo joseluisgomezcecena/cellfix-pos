@@ -62,18 +62,27 @@ class TechnicianController extends Controller
 
         $business_id = request()->session()->get('user.business_id');
 
-        $rep_brand = DB::table('brands')->where('business_id', $business_id)
-            ->whereRaw("LOWER(name) = 'reparaciones'")->value('id');
+        // Incluimos productos de las marcas Reparaciones, Servicios y Cortos —
+        // las tres se consideran trabajos de técnico (mismo regex que en el POS para
+        // decidir si mostrar el selector de técnico al vender).
+        $brand_ids = DB::table('brands')
+            ->where('business_id', $business_id)
+            ->where(function ($q) {
+                $q->where('name', 'REGEXP', '(reparac|servic|corto)')
+                    ->orWhereRaw('LOWER(name) REGEXP "(reparac|servic|corto)"');
+            })
+            ->pluck('id');
 
         $products = collect();
-        if ($rep_brand) {
+        if ($brand_ids->isNotEmpty()) {
             $products = DB::table('products as p')
                 ->leftJoin('categories as c', 'c.id', '=', 'p.category_id')
+                ->leftJoin('brands as b', 'b.id', '=', 'p.brand_id')
                 ->where('p.business_id', $business_id)
-                ->where('p.brand_id', $rep_brand)
+                ->whereIn('p.brand_id', $brand_ids)
                 ->where('p.is_inactive', 0)
-                ->select('p.id', 'p.name', 'p.sku', DB::raw("COALESCE(c.name, '-') as category"))
-                ->orderBy('category')->orderBy('p.name')
+                ->select('p.id', 'p.name', 'p.sku', 'b.name as brand', DB::raw("COALESCE(c.name, '-') as category"))
+                ->orderBy('brand')->orderBy('category')->orderBy('p.name')
                 ->get();
         }
 

@@ -12,6 +12,7 @@
                 <table class="table table-condensed table-bordered table-striped" id="repair_comm_table">
                     <thead>
                         <tr class="bg-light-blue">
+                            <th>Marca</th>
                             <th>@lang('lang_v1.category')</th>
                             <th>@lang('sale.product')</th>
                             <th>SKU</th>
@@ -20,7 +21,8 @@
                     </thead>
                     <tbody>
                         @foreach($products as $p)
-                            <tr class="rc-row" data-search="{{ strtolower($p->category . ' ' . $p->name . ' ' . $p->sku) }}">
+                            <tr class="rc-row" data-search="{{ strtolower(($p->brand ?? '') . ' ' . $p->category . ' ' . $p->name . ' ' . $p->sku) }}">
+                                <td><small><strong>{{ $p->brand ?? '—' }}</strong></small></td>
                                 <td><small>{{ $p->category }}</small></td>
                                 <td>{{ $p->name }}</td>
                                 <td><small>{{ $p->sku }}</small></td>
@@ -34,7 +36,7 @@
                             </tr>
                         @endforeach
                         @if($products->isEmpty())
-                            <tr><td colspan="4" class="text-center text-muted">@lang('lang_v1.no_repair_products')</td></tr>
+                            <tr><td colspan="5" class="text-center text-muted">@lang('lang_v1.no_repair_products')</td></tr>
                         @endif
                     </tbody>
                 </table>
