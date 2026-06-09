@@ -100,7 +100,10 @@ class RepairOrderController extends Controller
                 });
         }
 
-        $exchange_rate = (float) (session('business.cash_exchange_rate') ?: 18);
+        // Leemos directo de BD para que el valor SIEMPRE sea el más reciente,
+        // sin importar cuándo se logueó el cajero. La sesión queda stale después
+        // de que admin actualiza el tipo de cambio en /exchange-rate.
+        $exchange_rate = (float) (DB::table('business')->where('id', $business_id)->value('cash_exchange_rate') ?: 18);
 
         return response()->json([
             'orders' => $result,

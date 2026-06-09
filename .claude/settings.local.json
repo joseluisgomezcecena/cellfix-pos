@@ -64,7 +64,8 @@
       "Bash(ls -t database/migrations/ 2>&1 | head -3; echo \"---deploy SQL last modified---\"; stat -c '%y %n' docs/deploy_produccion.sql)",
       "Read(//c/xampp/htdocs/pos.celfix.mx.dev/**)",
       "PowerShell(@\\('app/Http/Controllers/DailyCutController.php','app/Http/Controllers/SalesDashboardController.php','app/Http/Controllers/TechnicianController.php','app/Http/Controllers/VendorReportController.php'\\) | ForEach-Object { php -l $_ 2>&1 | Select-String -Pattern \"No syntax|error\" })",
-      "Bash(grep -n \"quantity.*= 2\\\\|quantity.*val\\(2\\)\\\\|layaway_quantity.*val\\\\|val\\(2\\)\\\\|quantity'\\\\\\\\].*val\" Modules/Layaway/Resources/views/create.blade.php)"
+      "Bash(grep -n \"quantity.*= 2\\\\|quantity.*val\\(2\\)\\\\|layaway_quantity.*val\\\\|val\\(2\\)\\\\|quantity'\\\\\\\\].*val\" Modules/Layaway/Resources/views/create.blade.php)",
+      "Bash(git commit --amend -m ' *)"
     ],
     "deny": [],
     "ask": []

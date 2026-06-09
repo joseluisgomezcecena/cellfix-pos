@@ -36,8 +36,13 @@ class ExchangeRateController extends Controller
             $business->cash_exchange_rate = (float) $request->input('cash_exchange_rate');
             $business->save();
 
-            // Refresh in-session value so the cash modal reflects the new rate immediately
-            $request->session()->put('business.cash_exchange_rate', $business->cash_exchange_rate);
+            // Refresh in-session business so the cash modal reflects the new rate immediately.
+            // IMPORTANTE: NO usar put('business.cash_exchange_rate', X) — la sesión guarda el
+            // business como objeto Eloquent (lo pone SetSessionData), y la notación de punto en
+            // Session::put lo reemplaza por un array con solo esa key, perdiendo name,
+            // theme_color, etc. → el header queda sin "CELFIX" y sin colores. Volvemos a poner
+            // el objeto completo (ya actualizado) para conservar el resto.
+            $request->session()->put('business', $business);
 
             $output = ['success' => 1, 'msg' => __('lang_v1.exchange_rate_updated')];
         } catch (\Exception $e) {

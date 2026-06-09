@@ -15,8 +15,16 @@
                     <div class="col-md-4">
                         <div class="form-group" style="margin-bottom: 0;">
                             <label style="font-weight: bold;">@lang('lang_v1.exchange_rate') (USD→MXN):</label>
+                            {{-- IMPORTANTE: leemos directo de BD (no de sesión) para que el cajero
+                                 SIEMPRE vea el valor más reciente, sin importar cuándo se logueó.
+                                 La sesión solo se carga al login y queda stale tras /exchange-rate. --}}
+                            @php
+                                $live_exchange_rate = \DB::table('business')
+                                    ->where('id', session('user.business_id'))
+                                    ->value('cash_exchange_rate') ?: 18.00;
+                            @endphp
                             <input type="number" min="0" step="0.01" class="form-control" id="cash_exchange_rate"
-                                value="{{ number_format(session('business.cash_exchange_rate', 18.00), 2, '.', '') }}"
+                                value="{{ number_format($live_exchange_rate, 2, '.', '') }}"
                                 style="height: 42px;">
                         </div>
                     </div>
