@@ -188,8 +188,13 @@ class LayawayPaymentController extends Controller
             $total_paid = $layaway->payments()->sum('amount');
 
             if ($layaway->balance_due <= 0) {
-                // Fully paid - mark as completed
-                $layaway->update(['status' => 'completed']);
+                // Fully paid - mark as completed + set completed_at for the cut consolidation.
+                // El cut diario usa completed_at para "concentrar" todos los pagos del apartado
+                // en el día de entrega — en vez de sumarlos en los días de los abonos parciales.
+                $layaway->update([
+                    'status' => 'completed',
+                    'completed_at' => now(),
+                ]);
                 // Update transaction payment status to paid
                 $layaway->transaction->update(['payment_status' => 'paid']);
             } elseif ($layaway->status == 'pending' && $total_paid > 0) {

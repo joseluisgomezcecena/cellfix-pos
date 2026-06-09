@@ -442,7 +442,21 @@ class LayawayController extends Controller
 
                 // Update balance and set status to active
                 $layaway->updateBalance();
-                $layaway->update(['status' => 'active']);
+                $layaway->refresh();
+                if ($layaway->balance_due <= 0) {
+                    // Caso raro: el enganche cubrió el total al crear el apartado.
+                    // Lo marcamos como completed y registramos completed_at para que el
+                    // cut diario lo consolide en este día.
+                    $layaway->update([
+                        'status' => 'completed',
+                        'completed_at' => now(),
+                    ]);
+                    if ($layaway->transaction) {
+                        $layaway->transaction->update(['payment_status' => 'paid']);
+                    }
+                } else {
+                    $layaway->update(['status' => 'active']);
+                }
             }
 
             DB::commit();

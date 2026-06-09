@@ -19,13 +19,35 @@ class DailyCutUtil
         $end = Carbon::parse($date)->endOfDay()->toDateTimeString();
 
         // ---- Sales transactions (final only) ----
-        $sales = DB::table('transactions')
-            ->where('business_id', $business_id)
-            ->where('location_id', $location_id)
-            ->where('type', 'sell')
-            ->where('status', 'final')
-            ->whereBetween('transaction_date', [$start, $end])
-            ->select('id', 'final_total', 'total_before_tax', 'tax_amount', 'discount_amount')
+        // Reglas:
+        //   A) Venta normal sin apartado    → cuenta por transaction_date.
+        //   B) Apartado COMPLETADO hoy      → cuenta por layaways.completed_at = hoy.
+        //                                     Cuando aparece, TODOS sus pagos acumulados se
+        //                                     suman ese día (no se distribuyen por paid_on).
+        //   C) Apartado todavía ACTIVO      → NO aparece en ningún cut. El dinero está
+        //                                     físicamente en la caja del equipo, no en
+        //                                     la caja registradora.
+        $sales = DB::table('transactions as t')
+            ->leftJoin('layaways as l', 'l.id', '=', 't.layaway_id')
+            ->where('t.business_id', $business_id)
+            ->where('t.location_id', $location_id)
+            ->where('t.type', 'sell')
+            ->where('t.status', 'final')
+            ->where(function ($q) use ($start, $end) {
+                // Regla A: venta normal sin layaway_id → filtra por transaction_date
+                $q->where(function ($q2) use ($start, $end) {
+                    $q2->whereNull('t.layaway_id')
+                        ->whereBetween('t.transaction_date', [$start, $end]);
+                })
+                // Regla B: apartado completado hoy → filtra por layaways.completed_at
+                ->orWhere(function ($q2) use ($start, $end) {
+                    $q2->whereNotNull('t.layaway_id')
+                        ->whereNotNull('l.completed_at')
+                        ->whereBetween('l.completed_at', [$start, $end]);
+                });
+                // Regla C: apartado activo → automáticamente excluido (no matchea A ni B)
+            })
+            ->select('t.id', 't.final_total', 't.total_before_tax', 't.tax_amount', 't.discount_amount')
             ->get();
 
         $sale_ids = $sales->pluck('id')->toArray();

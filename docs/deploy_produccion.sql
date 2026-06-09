@@ -225,6 +225,29 @@ PREPARE st FROM @s;
 EXECUTE st;
 DEALLOCATE PREPARE st;
 
+-- columna layaways.completed_at + indice + backfill (solo si no existe)
+-- Marca la fecha en que un apartado pasó a status=completed con balance=0.
+-- El cut diario la usa para consolidar los pagos del apartado en el dia de entrega
+-- (los apartados activos quedan FUERA del cut hasta que se paguen completos).
+SET @e := (SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'layaways' AND column_name = 'completed_at');
+SET @s := IF(@e = 0, 'ALTER TABLE `layaways` ADD COLUMN `completed_at` DATETIME NULL AFTER `status`', 'DO 1');
+PREPARE st FROM @s;
+EXECUTE st;
+DEALLOCATE PREPARE st;
+
+SET @e := (SELECT COUNT(*) FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = 'layaways' AND index_name = 'layaways_completed_at_index');
+SET @s := IF(@e = 0, 'ALTER TABLE `layaways` ADD INDEX `layaways_completed_at_index` (`completed_at`)', 'DO 1');
+PREPARE st FROM @s;
+EXECUTE st;
+DEALLOCATE PREPARE st;
+
+-- Backfill: apartados ya cerrados al 100% (completed + balance=0) usan updated_at como fecha de completacion.
+UPDATE `layaways`
+   SET `completed_at` = `updated_at`
+ WHERE `status` = 'completed'
+   AND `balance_due` = 0
+   AND `completed_at` IS NULL;
+
 -- columna transactions.repair_status (solo si no existe)
 SET @e := (SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'transactions' AND column_name = 'repair_status');
 SET @s := IF(@e = 0, 'ALTER TABLE `transactions` ADD COLUMN `repair_status` varchar(20) NULL AFTER `status`', 'DO 1');

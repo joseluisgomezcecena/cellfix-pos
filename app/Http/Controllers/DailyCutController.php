@@ -478,6 +478,74 @@ class DailyCutController extends Controller
     }
 
     /**
+     * Regenera cortes históricos con la lógica actual. Útil cuando cambia una
+     * regla de negocio (ej: apartados activos ya no cuentan al cut) y se necesita
+     * que los cortes viejos se recalculen para reflejar la nueva regla.
+     *
+     * Por defecto regenera desde la fecha del corte más antiguo. Opcional:
+     * pasar start_date / end_date / location_id para acotar.
+     */
+    public function regenerateHistorical(Request $request)
+    {
+        if (!auth()->user()->can('business_settings.access')) {
+            abort(403, 'Unauthorized action.');
+        }
+
+        @ini_set('memory_limit', '512M');
+        @set_time_limit(900);
+
+        $business_id = $request->session()->get('user.business_id');
+        $user_id = $request->session()->get('user.id');
+
+        $start_date = $request->get('start_date');
+        $end_date = $request->get('end_date', Carbon::now()->toDateString());
+        $location_id = $request->get('location_id');
+
+        // Si no se especifica start, usar el corte más antiguo del business.
+        if (empty($start_date)) {
+            $oldest = DailyCut::where('business_id', $business_id)->min('cut_date');
+            $start_date = $oldest ?: Carbon::now()->subDays(90)->toDateString();
+        }
+
+        $loc_query = BusinessLocation::where('business_id', $business_id)->where('is_active', 1);
+        if (!empty($location_id)) {
+            $loc_query->where('id', $location_id);
+        }
+        $location_ids = $loc_query->pluck('id');
+
+        $current = Carbon::parse($start_date);
+        $end = Carbon::parse($end_date);
+        if ($end->gt(Carbon::now())) {
+            $end = Carbon::now();
+        }
+
+        $count = 0;
+        $errors = [];
+        while ($current->lte($end)) {
+            $date_str = $current->toDateString();
+            foreach ($location_ids as $loc_id) {
+                try {
+                    $this->util->upsert($business_id, $loc_id, $date_str, $user_id);
+                    $count++;
+                } catch (\Throwable $e) {
+                    $errors[] = "{$date_str} loc={$loc_id}: " . $e->getMessage();
+                }
+            }
+            $current->addDay();
+        }
+
+        \Log::info("[regenerate-historical] business={$business_id} from={$start_date} to={$end->toDateString()} regenerated={$count} errors=" . count($errors));
+
+        $msg = "Regenerados {$count} cortes ({$start_date} → {$end->toDateString()}).";
+        if (!empty($errors)) {
+            $msg .= " <br>Errores: " . implode(' | ', array_slice($errors, 0, 5));
+        }
+
+        return redirect()->route('daily-cuts.index')
+            ->with('status', ['success' => empty($errors) ? 1 : 0, 'msg' => $msg]);
+    }
+
+    /**
      * Public cron endpoint — triggers cut generation for all businesses for today.
      * Protected by a static token (env DAILY_CUT_CRON_TOKEN). Use with cron-job.org
      * or any external cron service hitting it at 18:00 daily.

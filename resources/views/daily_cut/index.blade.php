@@ -85,6 +85,13 @@
                         <i class="fas fa-sync"></i> @lang('lang_v1.generate_now')
                     </button>
                 {!! Form::close() !!}
+                @can('business_settings.access')
+                    {!! Form::open(['url' => route('daily-cuts.regenerate-historical'), 'method' => 'post', 'style' => 'display:inline-block;', 'onsubmit' => "return confirm('Esto regenerará TODOS los cortes históricos del negocio con las reglas actuales (apartados activos ya NO se cuentan). Puede tardar varios minutos. ¿Continuar?');"]) !!}
+                    <button type="submit" class="tw-dw-btn tw-bg-amber-600 hover:tw-bg-amber-700 tw-text-white tw-font-bold tw-rounded-full tw-border-none" title="Recalcular cortes históricos con las reglas actuales (apartados activos excluidos)">
+                        <i class="fas fa-history"></i> Regenerar histórico
+                    </button>
+                    {!! Form::close() !!}
+                @endcan
             </div>
         @endslot
 
