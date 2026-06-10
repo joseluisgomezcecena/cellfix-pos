@@ -343,8 +343,6 @@ class DailyCutController extends Controller
         $location_ids = $loc_query->pluck('id');
 
         $today_str = Carbon::now()->toDateString();
-        $yesterday_str = Carbon::yesterday()->toDateString();
-        $today_midnight = Carbon::today(); // hoy 00:00:00
         $current = Carbon::parse($start_date);
         $end = Carbon::parse($end_date);
         $user_id = request()->session()->get('user.id');
@@ -362,19 +360,18 @@ class DailyCutController extends Controller
                     ->where('cut_date', $date_str)
                     ->first();
 
+                // REGLA: si el corte ya está CERRADO (closed_at != NULL), NUNCA se regenera.
+                // Solo se regenera si:
+                //   - No existe (alguien abrió el reporte sin que hubiera corte aún), o
+                //   - Es de HOY y aún NO está cerrado (sigue mutable durante el día hasta que
+                //     el cajero presione "Cerrar caja" o el heartbeat lo cierre a las 18:00).
                 $regenerate = false;
                 if (!$cut) {
-                    // No existe la foto: generarla.
                     $regenerate = true;
-                } elseif ($date_str === $today_str) {
-                    // Hoy: siempre regenerar para capturar nuevas ventas.
-                    $regenerate = true;
-                } elseif ($date_str === $yesterday_str && $cut->generated_at < $today_midnight) {
-                    // Ayer: si la foto se tomó antes de cerrar el día (caso típico: 6 PM auto-cut),
-                    // regenerar una vez después de medianoche para capturar ventas tardías
-                    // (ej. cliente que llega 5:59 PM y la venta se registra 6:05 PM).
+                } elseif ($date_str === $today_str && is_null($cut->closed_at)) {
                     $regenerate = true;
                 }
+                // Cortes con closed_at != NULL: NUNCA regenerar (incluye días pasados).
 
                 if ($regenerate) {
                     $this->util->upsert($business_id, $loc_id, $date_str, $user_id);
@@ -590,6 +587,82 @@ class DailyCutController extends Controller
         } catch (\Exception $e) {
             \Log::emergency('File:' . $e->getFile() . 'Line:' . $e->getLine() . 'Message:' . $e->getMessage());
             $output = ['success' => false, 'msg' => __('messages.something_went_wrong')];
+        }
+
+        return redirect()->route('daily-cuts.index')->with('status', $output);
+    }
+
+    /**
+     * Cierra DEFINITIVAMENTE el corte de una sucursal+fecha. Una vez cerrado:
+     *   - El heartbeat de las 18:00 NO lo va a sobreescribir.
+     *   - ensureCutsForRange NO lo regenera al abrir reportes.
+     *   - Solo "Reabrir" lo vuelve a hacer mutable.
+     *
+     * Antes de cerrar, regenera el corte para que refleje las ventas más recientes.
+     */
+    public function close(Request $request)
+    {
+        if (!auth()->user()->can('business_settings.access')) {
+            abort(403, 'Unauthorized action.');
+        }
+
+        $request->validate([
+            'date' => 'required|date',
+            'location_id' => 'required|integer',
+        ]);
+
+        $business_id = $request->session()->get('user.business_id');
+        $user_id = $request->session()->get('user.id');
+        $date = $request->input('date');
+        $location_id = (int) $request->input('location_id');
+
+        try {
+            // Verifica que la sucursal pertenezca al business
+            \App\BusinessLocation::where('business_id', $business_id)->findOrFail($location_id);
+
+            // Genera/regenera el corte con datos actuales (es el snapshot que va a quedar fijo)
+            $cut = $this->util->upsert($business_id, $location_id, $date, $user_id);
+
+            // Cierra el corte
+            $cut->closed_at = Carbon::now();
+            $cut->closed_by = $user_id;
+            $cut->save();
+
+            \Log::info("[daily-cut-close] business={$business_id} location={$location_id} date={$date} closed_by={$user_id}");
+
+            $output = ['success' => 1, 'msg' => 'Corte cerrado definitivamente. Ya no se modificará.'];
+        } catch (\Throwable $e) {
+            \Log::emergency('File:' . $e->getFile() . 'Line:' . $e->getLine() . 'Message:' . $e->getMessage());
+            $output = ['success' => 0, 'msg' => __('messages.something_went_wrong')];
+        }
+
+        return redirect()->route('daily-cuts.index')->with('status', $output);
+    }
+
+    /**
+     * Reabre un corte previamente cerrado. Solo admin. Después de reabrir,
+     * el corte vuelve a ser mutable (heartbeat / ensureCutsForRange lo pueden tocar otra vez).
+     */
+    public function reopen(Request $request, $id)
+    {
+        if (!auth()->user()->can('business_settings.access')) {
+            abort(403, 'Unauthorized action.');
+        }
+
+        $business_id = $request->session()->get('user.business_id');
+
+        try {
+            $cut = DailyCut::where('business_id', $business_id)->findOrFail($id);
+            $cut->closed_at = null;
+            $cut->closed_by = null;
+            $cut->save();
+
+            \Log::info("[daily-cut-reopen] business={$business_id} cut_id={$id} location={$cut->location_id} date={$cut->cut_date} reopened_by=" . $request->session()->get('user.id'));
+
+            $output = ['success' => 1, 'msg' => 'Corte reabierto. Volverá a actualizarse con las ventas actuales.'];
+        } catch (\Throwable $e) {
+            \Log::emergency('File:' . $e->getFile() . 'Line:' . $e->getLine() . 'Message:' . $e->getMessage());
+            $output = ['success' => 0, 'msg' => __('messages.something_went_wrong')];
         }
 
         return redirect()->route('daily-cuts.index')->with('status', $output);

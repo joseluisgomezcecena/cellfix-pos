@@ -225,6 +225,37 @@ PREPARE st FROM @s;
 EXECUTE st;
 DEALLOCATE PREPARE st;
 
+-- columnas daily_cuts.closed_at + closed_by + indice + backfill (solo si no existen)
+-- closed_at marca que el corte de esa (sucursal, fecha) quedo "cerrado definitivamente".
+-- Una vez cerrado:
+--   - el heartbeat de las 18:00 ignora esa sucursal,
+--   - ensureCutsForRange NO regenera al abrir reportes,
+--   - solo "Reabrir" (admin) lo vuelve a hacer mutable.
+SET @e := (SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'daily_cuts' AND column_name = 'closed_at');
+SET @s := IF(@e = 0, 'ALTER TABLE `daily_cuts` ADD COLUMN `closed_at` DATETIME NULL AFTER `generated_at`', 'DO 1');
+PREPARE st FROM @s;
+EXECUTE st;
+DEALLOCATE PREPARE st;
+
+SET @e := (SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'daily_cuts' AND column_name = 'closed_by');
+SET @s := IF(@e = 0, 'ALTER TABLE `daily_cuts` ADD COLUMN `closed_by` INT UNSIGNED NULL AFTER `closed_at`', 'DO 1');
+PREPARE st FROM @s;
+EXECUTE st;
+DEALLOCATE PREPARE st;
+
+SET @e := (SELECT COUNT(*) FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = 'daily_cuts' AND index_name = 'daily_cuts_closed_at_index');
+SET @s := IF(@e = 0, 'ALTER TABLE `daily_cuts` ADD INDEX `daily_cuts_closed_at_index` (`closed_at`)', 'DO 1');
+PREPARE st FROM @s;
+EXECUTE st;
+DEALLOCATE PREPARE st;
+
+-- Backfill: cortes generados >= cut_date 18:00 quedan marcados como cerrados
+-- (hereda la regla anterior de "frozen after 18:00").
+UPDATE `daily_cuts`
+   SET `closed_at` = `generated_at`
+ WHERE `closed_at` IS NULL
+   AND `generated_at` >= TIMESTAMP(CONCAT(`cut_date`, ' 18:00:00'));
+
 -- columna layaways.completed_at + indice + backfill (solo si no existe)
 -- Marca la fecha en que un apartado pasó a status=completed con balance=0.
 -- El cut diario la usa para consolidar los pagos del apartado en el dia de entrega

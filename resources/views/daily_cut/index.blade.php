@@ -17,11 +17,11 @@
         <i class="fas fa-clock"></i>
         @if(!empty($auto_cut_today))
             <strong>Corte automático generado hoy</strong> a las {{ $auto_cut_today->generated_at->format('H:i') }}.
-            Se ejecuta solo el primer acceso al sistema después de las 18:00.
         @else
-            <strong>Corte automático programado para las 18:00 hrs.</strong>
-            Se generará automáticamente con el primer acceso al sistema a partir de esa hora (sin necesidad de presionar "Generar corte").
+            <strong>Corte automático a las 18:00 hrs.</strong>
         @endif
+        Si tu sucursal cierra antes (ej. sábados 15:00), usa <strong>"Cerrar caja"</strong> en tu fila —
+        el heartbeat de las 18:00 ignorará las sucursales que ya estén cerradas manualmente.
     </div>
 
     @component('components.filters', ['title' => __('report.filters')])
@@ -101,6 +101,7 @@
                     <tr>
                         <th>@lang('messages.date')</th>
                         <th>@lang('purchase.business_location')</th>
+                        <th>Estado</th>
                         <th class="text-right">@lang('lang_v1.total_sales')</th>
                         <th class="text-right">@lang('lang_v1.cash')</th>
                         <th class="text-right">@lang('lang_v1.card')</th>
@@ -113,9 +114,20 @@
                 </thead>
                 <tbody>
                     @forelse($cuts as $cut)
-                        <tr>
+                        <tr style="{{ $cut->closed_at ? 'background-color:#f5f5f5;' : '' }}">
                             <td><strong>{{ $cut->cut_date->format('d/m/Y') }}</strong></td>
                             <td>{{ $cut->location->name ?? '-' }}</td>
+                            <td>
+                                @if($cut->closed_at)
+                                    <span class="label label-default" title="Cerrado el {{ $cut->closed_at->format('d/m/Y H:i') }}">
+                                        <i class="fas fa-lock"></i> CERRADO
+                                    </span>
+                                @else
+                                    <span class="label label-success" title="El corte se sigue actualizando con cada acceso. Hasta que se cierre.">
+                                        <i class="fas fa-clock"></i> EN CURSO
+                                    </span>
+                                @endif
+                            </td>
                             <td class="text-right"><span class="display_currency" data-currency_symbol="true">{{ $cut->total_sales }}</span></td>
                             <td class="text-right"><span class="display_currency" data-currency_symbol="true">{{ $cut->total_cash }}</span></td>
                             <td class="text-right"><span class="display_currency" data-currency_symbol="true">{{ $cut->total_card }}</span></td>
@@ -123,15 +135,36 @@
                             <td class="text-right"><span class="display_currency" data-currency_symbol="true">{{ $cut->total_cheque }}</span></td>
                             <td class="text-right"><span class="display_currency" data-currency_symbol="true">{{ $cut->total_expenses }}</span></td>
                             <td><small>{{ $cut->generated_at ? $cut->generated_at->format('d/m/Y H:i') : '-' }}</small></td>
-                            <td>
+                            <td style="white-space:nowrap;">
                                 <a href="{{ route('daily-cuts.show', $cut->id) }}" class="btn btn-xs btn-info">
                                     <i class="fas fa-eye"></i> @lang('messages.view')
                                 </a>
+                                @if(!$cut->closed_at)
+                                    <form method="POST" action="{{ route('daily-cuts.close') }}" style="display:inline-block;"
+                                        onsubmit="return confirm('¿Cerrar caja DEFINITIVAMENTE para {{ $cut->location->name }} ({{ $cut->cut_date->format('d/m/Y') }})? Después de esto el corte queda fijo y no se actualizará por ningún medio. Asegúrate de haber contado el efectivo físico.');">
+                                        @csrf
+                                        <input type="hidden" name="date" value="{{ $cut->cut_date->toDateString() }}">
+                                        <input type="hidden" name="location_id" value="{{ $cut->location_id }}">
+                                        <button type="submit" class="btn btn-xs btn-warning" title="Cierra el corte definitivamente. El heartbeat de 18:00 lo respetará.">
+                                            <i class="fas fa-lock"></i> Cerrar caja
+                                        </button>
+                                    </form>
+                                @else
+                                    @can('business_settings.access')
+                                        <form method="POST" action="{{ route('daily-cuts.reopen', $cut->id) }}" style="display:inline-block;"
+                                            onsubmit="return confirm('¿Reabrir este corte? Volverá a actualizarse y podría cambiar.');">
+                                            @csrf
+                                            <button type="submit" class="btn btn-xs btn-default" title="Solo admin. Vuelve a hacer el corte mutable.">
+                                                <i class="fas fa-lock-open"></i> Reabrir
+                                            </button>
+                                        </form>
+                                    @endcan
+                                @endif
                             </td>
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="10" class="text-center">@lang('lang_v1.no_cuts_found')</td>
+                            <td colspan="11" class="text-center">@lang('lang_v1.no_cuts_found')</td>
                         </tr>
                     @endforelse
                 </tbody>

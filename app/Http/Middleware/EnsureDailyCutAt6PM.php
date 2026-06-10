@@ -2,11 +2,13 @@
 
 namespace App\Http\Middleware;
 
+use App\BusinessLocation;
 use App\DailyCut;
 use App\Utils\DailyCutUtil;
 use Carbon\Carbon;
 use Closure;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Auto-generates the daily cut once per day, after 6:00 PM.
@@ -44,32 +46,18 @@ class EnsureDailyCutAt6PM
 
         $now = Carbon::now();
 
-        // Finalización de AYER (cualquier hora del día):
-        // Si el corte de ayer fue generado antes de medianoche (típicamente la foto de 6 PM),
-        // regenerarlo una sola vez para capturar ventas tardías 6:01 PM → 23:59 PM.
-        $this->maybeFinalizeYesterday($business_id, $now);
-
-        // Auto-cut de HOY: solo se dispara después de las 18:00.
+        // REGLA: el corte oficial se toma al primer request después de las 18:00.
+        // Una vez tomado queda CONGELADO — no se regenera al abrir reportes, ni en días
+        // siguientes. Si llegan ventas después de las 18:00 cuentan para el día siguiente.
         if ($now->hour < 18) {
             return;
         }
 
         $today = $now->toDateString();
-        $cutoff = $now->copy()->startOfDay()->setTime(18, 0); // today 18:00:00
 
         // Fast check via cache so we skip the DB query most of the time.
         $doneKey = 'daily_cut_auto_done_' . $business_id . '_' . $today;
         if (Cache::has($doneKey)) {
-            return;
-        }
-
-        // Already finalized today (any location, generated at >= 18:00)? Mark cache and skip.
-        $hasFresh = DailyCut::where('business_id', $business_id)
-            ->where('cut_date', $today)
-            ->where('generated_at', '>=', $cutoff)
-            ->exists();
-        if ($hasFresh) {
-            Cache::put($doneKey, 1, $now->copy()->endOfDay()->diffInSeconds($now));
             return;
         }
 
@@ -82,53 +70,40 @@ class EnsureDailyCutAt6PM
 
         try {
             $util = app(DailyCutUtil::class);
-            $util->generateForBusiness($business_id, $today, null);
-            \Log::info("[daily-cut-heartbeat] auto-generated cuts business={$business_id} date={$today}");
+
+            // Procesar UBICACIÓN POR UBICACIÓN — saltar sucursales cuyo corte de hoy ya esté cerrado.
+            // (Caso típico: sucursal que cerró caja manualmente a las 15:00 los sábados; el
+            // heartbeat la ignora y NO sobreescribe su corte.)
+            $location_ids = BusinessLocation::where('business_id', $business_id)
+                ->where('is_active', 1)
+                ->pluck('id');
+
+            $closed_locations = DailyCut::where('business_id', $business_id)
+                ->where('cut_date', $today)
+                ->whereNotNull('closed_at')
+                ->pluck('location_id')
+                ->flip();
+
+            $processed = 0;
+            $skipped = 0;
+            foreach ($location_ids as $loc_id) {
+                if ($closed_locations->has($loc_id)) {
+                    $skipped++;
+                    continue; // ya cerrado manualmente, respetar
+                }
+                $cut = $util->upsert($business_id, $loc_id, $today, null);
+                // El auto-cut de las 18:00 también CIERRA el corte para que quede congelado.
+                $cut->closed_at = $now;
+                $cut->closed_by = null; // null = cerrado por el sistema (heartbeat)
+                $cut->save();
+                $processed++;
+            }
+
+            \Log::info("[daily-cut-heartbeat] business={$business_id} date={$today} processed={$processed} skipped_already_closed={$skipped}");
             Cache::put($doneKey, 1, $now->copy()->endOfDay()->diffInSeconds($now));
         } finally {
             Cache::forget($lockKey);
         }
     }
 
-    /**
-     * Regenera el corte de AYER una sola vez al día si fue generado antes de medianoche
-     * (la foto de las 6 PM no incluye ventas posteriores hasta 23:59).
-     */
-    private function maybeFinalizeYesterday($business_id, $now)
-    {
-        $yesterday = $now->copy()->subDay()->toDateString();
-        $today_midnight = $now->copy()->startOfDay();
-
-        // Cache: una sola finalización por business × día.
-        $finalKey = 'daily_cut_finalize_yesterday_' . $business_id . '_' . $yesterday;
-        if (Cache::has($finalKey)) {
-            return;
-        }
-
-        // ¿Algún corte de ayer está aún con la foto vieja (anterior a hoy 00:00)?
-        $needsFinalize = DailyCut::where('business_id', $business_id)
-            ->where('cut_date', $yesterday)
-            ->where('generated_at', '<', $today_midnight)
-            ->exists();
-
-        if (!$needsFinalize) {
-            Cache::put($finalKey, 1, $now->copy()->endOfDay()->diffInSeconds($now));
-            return;
-        }
-
-        $lockKey = 'daily_cut_finalize_yesterday_lock_' . $business_id . '_' . $yesterday;
-        if (Cache::has($lockKey)) {
-            return;
-        }
-        Cache::put($lockKey, 1, 120);
-
-        try {
-            $util = app(DailyCutUtil::class);
-            $util->generateForBusiness($business_id, $yesterday, null);
-            \Log::info("[daily-cut-heartbeat] finalize yesterday business={$business_id} date={$yesterday}");
-            Cache::put($finalKey, 1, $now->copy()->endOfDay()->diffInSeconds($now));
-        } finally {
-            Cache::forget($lockKey);
-        }
-    }
 }

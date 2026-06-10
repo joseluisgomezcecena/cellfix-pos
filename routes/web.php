@@ -460,6 +460,8 @@ Route::middleware(['setData', 'auth', 'SetSessionData', 'language', 'timezone', 
     Route::get('/daily-cuts/export-weekly', [\App\Http\Controllers\DailyCutController::class, 'exportWeekly'])->name('daily-cuts.export-weekly');
     Route::post('/daily-cuts/generate', [\App\Http\Controllers\DailyCutController::class, 'generate'])->name('daily-cuts.generate');
     Route::post('/daily-cuts/regenerate-historical', [\App\Http\Controllers\DailyCutController::class, 'regenerateHistorical'])->name('daily-cuts.regenerate-historical');
+    Route::post('/daily-cuts/close', [\App\Http\Controllers\DailyCutController::class, 'close'])->name('daily-cuts.close');
+    Route::post('/daily-cuts/{id}/reopen', [\App\Http\Controllers\DailyCutController::class, 'reopen'])->name('daily-cuts.reopen');
     Route::get('/daily-cuts/{id}', [\App\Http\Controllers\DailyCutController::class, 'show'])->name('daily-cuts.show');
 
     Route::prefix('account')->group(function () {

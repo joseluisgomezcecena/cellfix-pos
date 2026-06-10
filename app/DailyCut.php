@@ -12,6 +12,7 @@ class DailyCut extends Model
         'cut_date' => 'date',
         'summary' => 'array',
         'generated_at' => 'datetime',
+        'closed_at' => 'datetime',
         'total_sales' => 'float',
         'total_cash' => 'float',
         'total_card' => 'float',
@@ -20,6 +21,16 @@ class DailyCut extends Model
         'total_other' => 'float',
         'total_expenses' => 'float',
     ];
+
+    public function closedBy()
+    {
+        return $this->belongsTo(User::class, 'closed_by');
+    }
+
+    public function isClosed()
+    {
+        return !is_null($this->closed_at);
+    }
 
     public function business()
     {
