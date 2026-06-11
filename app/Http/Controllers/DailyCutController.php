@@ -93,15 +93,32 @@ class DailyCutController extends Controller
 
         $location_id = $request->get('location_id');
 
+        // Si NO hay sucursal seleccionada, no calculamos nada — la vista muestra un
+        // aviso "selecciona una sucursal del dropdown". Esto evita mezclar totales de
+        // varias sucursales por accidente. El valor especial "all" sí permite ver todas.
+        if (empty($location_id)) {
+            $locations = BusinessLocation::forDropdown($business_id);
+            return view('daily_cut.weekly', [
+                'days' => [],
+                'locations' => $locations,
+                'location_id' => null,
+                'start_date' => $start_date,
+            ]);
+        }
+
+        // "all" = todas las sucursales sumadas (el usuario lo eligió explícitamente).
+        // Cualquier otro valor = una sucursal específica.
+        $is_all = ($location_id === 'all');
+        $specific_loc_id = $is_all ? null : (int) $location_id;
+
         // Make sure cuts are fresh in the requested range
-        $this->ensureCutsForRange($business_id, $start->toDateString(), $end->toDateString(), $location_id);
+        $this->ensureCutsForRange($business_id, $start->toDateString(), $end->toDateString(), $specific_loc_id);
 
         // Load all cuts in the range
         $query = DailyCut::where('business_id', $business_id)
             ->whereBetween('cut_date', [$start->toDateString(), $end->toDateString()]);
-
-        if (!empty($location_id)) {
-            $query->where('location_id', $location_id);
+        if (!$is_all) {
+            $query->where('location_id', $specific_loc_id);
         }
 
         $cuts = $query->get();

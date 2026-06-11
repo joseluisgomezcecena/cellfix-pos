@@ -26,8 +26,15 @@
                 </div>
                 <div class="col-md-3">
                     <div class="form-group">
-                        {!! Form::label('location_id', __('purchase.business_location') . ':') !!}
-                        {!! Form::select('location_id', $locations, $location_id, ['class' => 'form-control select2', 'placeholder' => __('lang_v1.all') . ' (sumadas)', 'style' => 'width: 100%']) !!}
+                        {!! Form::label('location_id', __('purchase.business_location') . ':*') !!}
+                        @php
+                            // Prepend "Todas las sucursales (sumadas)" como opción explícita
+                            // con value="all". El default sigue siendo "ninguna seleccionada".
+                            $locations_with_all = collect(['all' => '🏢 Todas las sucursales (sumadas)'])
+                                ->merge(is_object($locations) ? $locations->toArray() : (array) $locations)
+                                ->all();
+                        @endphp
+                        {!! Form::select('location_id', $locations_with_all, $location_id, ['class' => 'form-control select2', 'placeholder' => '— Selecciona una sucursal —', 'required', 'style' => 'width: 100%']) !!}
                     </div>
                 </div>
                 <div class="col-md-3">
@@ -44,6 +51,18 @@
             </div>
         {!! Form::close() !!}
     @endcomponent
+
+    @if(empty($location_id))
+        <div class="row">
+            <div class="col-md-12">
+                <div class="alert alert-info" style="font-size:16px; padding:24px; text-align:center; border-left: 6px solid #2196f3;">
+                    <i class="fas fa-info-circle fa-2x" style="vertical-align:middle; margin-right:12px; color:#2196f3;"></i>
+                    <strong>Selecciona una sucursal en el filtro de arriba</strong> y presiona <em>Filtrar</em> para ver su resumen semanal.<br>
+                    <small style="color:#555;">Cada sucursal se ve por separado para evitar mezclar totales entre cajas distintas.</small>
+                </div>
+            </div>
+        </div>
+    @else
 
     @php
         $week_end = \Carbon\Carbon::parse($start_date)->addDays(6)->toDateString();
@@ -232,6 +251,7 @@
             @endcomponent
         </div>
     </div>
+    @endif
 </section>
 
 @stop

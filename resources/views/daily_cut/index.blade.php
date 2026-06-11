@@ -139,6 +139,19 @@
                                 <a href="{{ route('daily-cuts.show', $cut->id) }}" class="btn btn-xs btn-info">
                                     <i class="fas fa-eye"></i> @lang('messages.view')
                                 </a>
+                                @if($cut->cut_date->isToday())
+                                    {{-- Generar corte sólo para esta sucursal, solo disponible HOY.
+                                         Para días pasados no aplica (ya están cerrados/inmutables). --}}
+                                    <form method="POST" action="{{ route('daily-cuts.generate') }}" style="display:inline-block;"
+                                        onsubmit="return confirm('Regenerar el corte de {{ $cut->location->name }} con los datos más recientes? @if($cut->closed_at)ATENCIÓN: este corte ya está CERRADO — los totales se actualizan pero la hora de cierre se conserva. @endif¿Continuar?');">
+                                        @csrf
+                                        <input type="hidden" name="date" value="{{ $cut->cut_date->toDateString() }}">
+                                        <input type="hidden" name="location_id" value="{{ $cut->location_id }}">
+                                        <button type="submit" class="btn btn-xs btn-primary" title="Regenera el corte SÓLO para esta sucursal con datos al instante.">
+                                            <i class="fas fa-sync"></i> Generar corte
+                                        </button>
+                                    </form>
+                                @endif
                                 @if(!$cut->closed_at)
                                     <form method="POST" action="{{ route('daily-cuts.close') }}" style="display:inline-block;"
                                         onsubmit="return confirm('¿Cerrar caja DEFINITIVAMENTE para {{ $cut->location->name }} ({{ $cut->cut_date->format('d/m/Y') }})? Después de esto el corte queda fijo y no se actualizará por ningún medio. Asegúrate de haber contado el efectivo físico.');">
