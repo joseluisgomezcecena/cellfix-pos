@@ -564,6 +564,12 @@ class DailyCutController extends Controller
 
     /**
      * Manually triggers the cut generation for today (or for a specific date/location).
+     *
+     * IMPORTANTE: este botón es DESTRUCTIVO — sobreescribe los totales del corte
+     * incluso si ya está cerrado. Por eso en la UI se muestra ROJO con confirmación.
+     * No toca closed_at: si el corte estaba cerrado sigue cerrado, solo se actualizan
+     * los totales con las ventas más recientes. Use cuando un admin necesita un
+     * "force refresh" sin pasar por reabrir → regenerar → cerrar.
      */
     public function generate(Request $request)
     {
@@ -583,7 +589,7 @@ class DailyCutController extends Controller
                 $this->util->generateForBusiness($business_id, $date, $user_id);
             }
 
-            $output = ['success' => true, 'msg' => 'Corte generado correctamente'];
+            $output = ['success' => true, 'msg' => 'Corte regenerado (incluyendo los que estaban cerrados).'];
         } catch (\Exception $e) {
             \Log::emergency('File:' . $e->getFile() . 'Line:' . $e->getLine() . 'Message:' . $e->getMessage());
             $output = ['success' => false, 'msg' => __('messages.something_went_wrong')];

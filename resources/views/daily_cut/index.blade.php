@@ -79,10 +79,10 @@
                     title="{{ __('lang_v1.export_detailed') }}">
                     <i class="fas fa-file-excel"></i> @lang('lang_v1.export_detailed')
                 </button>
-                {!! Form::open(['url' => route('daily-cuts.generate'), 'method' => 'post', 'style' => 'display:inline-block;']) !!}
+                {!! Form::open(['url' => route('daily-cuts.generate'), 'method' => 'post', 'style' => 'display:inline-block;', 'onsubmit' => "return confirm('ATENCIÓN: Esto regenera los totales del corte de HOY incluso si ya estaba CERRADO. La hora de cierre se conserva pero los montos se actualizan. ¿Continuar?');"]) !!}
                     {!! Form::hidden('date', \Carbon\Carbon::now()->toDateString()) !!}
-                    <button type="submit" class="tw-dw-btn tw-bg-gradient-to-r tw-from-green-600 tw-to-green-500 tw-text-white tw-font-bold tw-rounded-full tw-border-none">
-                        <i class="fas fa-sync"></i> @lang('lang_v1.generate_now')
+                    <button type="submit" class="tw-dw-btn tw-bg-gradient-to-r tw-from-red-600 tw-to-red-500 tw-text-white tw-font-bold tw-rounded-full tw-border-none" title="DESTRUCTIVO: sobreescribe totales incluso de cortes cerrados">
+                        <i class="fas fa-exclamation-triangle"></i> @lang('lang_v1.generate_now')
                     </button>
                 {!! Form::close() !!}
                 @can('business_settings.access')
