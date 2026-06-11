@@ -34,11 +34,13 @@ class Layaway extends Model
         'balance_due',
         'payment_deadline',
         'status',
+        'completed_at',
         'notes'
     ];
 
     protected $dates = [
         'payment_deadline',
+        'completed_at',
         'created_at',
         'updated_at'
     ];
@@ -48,6 +50,7 @@ class Layaway extends Model
         'down_payment_percentage' => 'float',
         'down_payment_amount' => 'float',
         'balance_due' => 'float',
+        'completed_at' => 'datetime',
     ];
 
     /**
