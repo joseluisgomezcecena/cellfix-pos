@@ -374,7 +374,14 @@ class DailyCutController extends Controller
                 // Cortes con closed_at != NULL: NUNCA regenerar (incluye días pasados).
 
                 if ($regenerate) {
-                    $this->util->upsert($business_id, $loc_id, $date_str, $user_id);
+                    $created_cut = $this->util->upsert($business_id, $loc_id, $date_str, $user_id);
+                    // Si es un día PASADO (no hoy), cerrar automáticamente. Un día que ya pasó
+                    // no debe quedar mutable — esto es el cierre implícito del "fin del día".
+                    if ($date_str !== $today_str && is_null($created_cut->closed_at)) {
+                        $created_cut->closed_at = Carbon::now();
+                        $created_cut->closed_by = null; // sistema
+                        $created_cut->save();
+                    }
                 }
             }
             $current->addDay();
@@ -516,13 +523,20 @@ class DailyCutController extends Controller
             $end = Carbon::now();
         }
 
+        $today_str = Carbon::now()->toDateString();
         $count = 0;
         $errors = [];
         while ($current->lte($end)) {
             $date_str = $current->toDateString();
             foreach ($location_ids as $loc_id) {
                 try {
-                    $this->util->upsert($business_id, $loc_id, $date_str, $user_id);
+                    $regen_cut = $this->util->upsert($business_id, $loc_id, $date_str, $user_id);
+                    // Días pasados: cierra automáticamente (un día que ya pasó no debe quedar abierto).
+                    if ($date_str !== $today_str && is_null($regen_cut->closed_at)) {
+                        $regen_cut->closed_at = Carbon::now();
+                        $regen_cut->closed_by = null;
+                        $regen_cut->save();
+                    }
                     $count++;
                 } catch (\Throwable $e) {
                     $errors[] = "{$date_str} loc={$loc_id}: " . $e->getMessage();

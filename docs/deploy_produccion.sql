@@ -256,6 +256,13 @@ UPDATE `daily_cuts`
  WHERE `closed_at` IS NULL
    AND `generated_at` >= TIMESTAMP(CONCAT(`cut_date`, ' 18:00:00'));
 
+-- Backfill: cualquier corte de día PASADO que aún quede abierto se cierra automáticamente.
+-- Un día que ya terminó no debe quedar mutable; estado consistente para todos los días pasados.
+UPDATE `daily_cuts`
+   SET `closed_at` = COALESCE(`generated_at`, TIMESTAMP(CONCAT(`cut_date`, ' 23:59:59')))
+ WHERE `closed_at` IS NULL
+   AND `cut_date` < CURDATE();
+
 -- columna layaways.completed_at + indice + backfill (solo si no existe)
 -- Marca la fecha en que un apartado pasó a status=completed con balance=0.
 -- El cut diario la usa para consolidar los pagos del apartado en el dia de entrega
