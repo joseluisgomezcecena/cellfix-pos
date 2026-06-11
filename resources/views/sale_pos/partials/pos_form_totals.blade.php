@@ -65,9 +65,8 @@
 				<td>
 					<span class="tw-text-base md:tw-text-lg tw-font-semibold">
 
-						<b class="tw-text-base md:tw-text-lg tw-font-bold">@lang('sale.shipping')(+): @show_tooltip(__('tooltip.shipping'))</b> 
-						<i class="fas fa-edit cursor-pointer"  title="@lang('sale.shipping')" aria-hidden="true" data-toggle="modal" data-target="#posShippingModal"></i>
-						<span id="shipping_charges_amount">0</span>
+						{{-- Transporte oculto a pedido del cliente. Span con id se mantiene oculto para no romper el JS. --}}
+						<span id="shipping_charges_amount" style="display:none;">0</span>
 						<input type="hidden" name="shipping_details" id="shipping_details" value="@if(empty($edit)){{''}}@else{{$transaction->shipping_details}}@endif" data-default="">
 
 						<input type="hidden" name="shipping_address" id="shipping_address" value="@if(empty($edit)){{''}}@else{{$transaction->shipping_address}}@endif">

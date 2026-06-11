@@ -1,4 +1,4 @@
-<div class="row" id="featured_products_box" style="display: none;">
+<div class="row" id="featured_products_box" style="display: {{ !empty($featured_products) ? 'block' : 'none' }};">
     @if (!empty($featured_products))
         @include('sale_pos.partials.featured_products')
     @endif
