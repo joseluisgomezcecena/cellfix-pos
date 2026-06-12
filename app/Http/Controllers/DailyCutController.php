@@ -24,10 +24,15 @@ class DailyCutController extends Controller
         }
 
         $business_id = $request->session()->get('user.business_id');
+        $user_id = $request->session()->get('user.id');
 
         $location_id = $request->get('location_id');
         $start_date = $request->get('start_date', Carbon::now()->subDays(7)->toDateString());
         $end_date = $request->get('end_date', Carbon::now()->toDateString());
+
+        // Asegura que HOY tenga una fila por sucursal — así por la mañana las cajas
+        // aparecen "abiertas" en $0 y se van actualizando durante el día. No las cierra.
+        $this->ensureTodayCutsExist($business_id, $user_id);
 
         $cuts = DailyCut::where('business_id', $business_id)
             ->whereBetween('cut_date', [$start_date, $end_date])
@@ -351,6 +356,57 @@ class DailyCutController extends Controller
      * Always regenerates today (sales might be in flight). For past days, only
      * generates if no snapshot exists yet.
      */
+    /**
+     * Garantiza que existan filas de daily_cut para HOY en TODAS las sucursales activas.
+     * Útil para que al cargar /daily-cuts en la mañana las "cajas" se vean abiertas
+     * desde $0 en vez de aparecer sólo a las 18:00 cuando dispara el heartbeat.
+     * No marca closed_at — sigue mutables durante el día.
+     *
+     * BONUS: también cierra cualquier corte de días pasados que haya quedado abierto
+     * (ej: nadie usó el sistema entre las 18:00 y medianoche → heartbeat no disparó).
+     * Lo regenera primero para capturar todas las ventas del día completo, luego cierra.
+     */
+    private function ensureTodayCutsExist($business_id, $user_id = null)
+    {
+        $today_str = Carbon::now()->toDateString();
+
+        // PASO 1 — cerrar cortes de DÍAS PASADOS que hayan quedado abiertos
+        // (caso típico: nadie usó el sistema después de las 18:00 ayer, heartbeat
+        // nunca disparó. El día ya pasó, esos cortes tienen que cerrarse.)
+        $past_open = DailyCut::where('business_id', $business_id)
+            ->where('cut_date', '<', $today_str)
+            ->whereNull('closed_at')
+            ->get();
+        foreach ($past_open as $stale_cut) {
+            // Regenera con todas las ventas del día (por si entraron tarde)
+            $regen = $this->util->upsert(
+                $business_id,
+                $stale_cut->location_id,
+                $stale_cut->cut_date->toDateString(),
+                $user_id
+            );
+            $regen->closed_at = Carbon::now();
+            $regen->closed_by = null; // sistema cerró tardíamente
+            $regen->save();
+        }
+
+        // PASO 2 — crear filas de hoy para sucursales que aún no las tengan
+        $location_ids = BusinessLocation::where('business_id', $business_id)
+            ->where('is_active', 1)
+            ->pluck('id');
+
+        $existing_today = DailyCut::where('business_id', $business_id)
+            ->where('cut_date', $today_str)
+            ->pluck('location_id')
+            ->flip();
+
+        foreach ($location_ids as $loc_id) {
+            if (!$existing_today->has($loc_id)) {
+                $this->util->upsert($business_id, $loc_id, $today_str, $user_id);
+            }
+        }
+    }
+
     private function ensureCutsForRange($business_id, $start_date, $end_date, $location_id = null)
     {
         $loc_query = BusinessLocation::where('business_id', $business_id)->where('is_active', 1);
@@ -594,13 +650,15 @@ class DailyCutController extends Controller
     }
 
     /**
-     * Manually triggers the cut generation for today (or for a specific date/location).
+     * Genera el corte. Comportamiento depende de location_id:
+     *   - location_id = "all" o vacío  → REFRESCA todas las sucursales SIN cerrar.
+     *                                    (totales actualizados pero el cut sigue mutable.)
+     *   - location_id = ID específico  → REGENERA esa sucursal Y la CIERRA.
+     *                                    (acción del cajero al terminar su turno: "este
+     *                                    es mi cut, ya no debe cambiar".)
      *
-     * IMPORTANTE: este botón es DESTRUCTIVO — sobreescribe los totales del corte
-     * incluso si ya está cerrado. Por eso en la UI se muestra ROJO con confirmación.
-     * No toca closed_at: si el corte estaba cerrado sigue cerrado, solo se actualizan
-     * los totales con las ventas más recientes. Use cuando un admin necesita un
-     * "force refresh" sin pasar por reabrir → regenerar → cerrar.
+     * Esto reemplaza el viejo flujo de "Generar ahora" + "Cerrar caja" en dos pasos:
+     * ahora el cajero hace todo en uno solo eligiendo su sucursal en el dropdown.
      */
     public function generate(Request $request)
     {
@@ -612,15 +670,43 @@ class DailyCutController extends Controller
         $user_id = $request->session()->get('user.id');
         $date = $request->get('date', Carbon::now()->toDateString());
         $location_id = $request->get('location_id');
+        $is_all = empty($location_id) || $location_id === 'all';
 
         try {
-            if (!empty($location_id)) {
-                $this->util->upsert($business_id, (int) $location_id, $date, $user_id);
+            if ($is_all) {
+                // REFRESCAR todas — no cierra ninguna. Útil durante el día para ver
+                // totales en vivo. Si una sucursal ya está cerrada, NO se sobreescribe
+                // (respeta closed_at — usuario debe pasar por reopen si quiere cambiarla).
+                $location_ids = BusinessLocation::where('business_id', $business_id)
+                    ->where('is_active', 1)
+                    ->pluck('id');
+                $skipped = 0;
+                $refreshed = 0;
+                foreach ($location_ids as $loc_id) {
+                    $existing = DailyCut::where('business_id', $business_id)
+                        ->where('location_id', $loc_id)
+                        ->where('cut_date', $date)
+                        ->first();
+                    if ($existing && $existing->closed_at) {
+                        $skipped++;
+                        continue;
+                    }
+                    $this->util->upsert($business_id, $loc_id, $date, $user_id);
+                    $refreshed++;
+                }
+                $msg = "Cortes refrescados: {$refreshed}.";
+                if ($skipped > 0) {
+                    $msg .= " Saltados (ya cerrados): {$skipped}.";
+                }
+                $output = ['success' => true, 'msg' => $msg];
             } else {
-                $this->util->generateForBusiness($business_id, $date, $user_id);
+                // GENERAR + CERRAR una sucursal específica (acción del cajero al terminar).
+                $cut = $this->util->upsert($business_id, (int) $location_id, $date, $user_id);
+                $cut->closed_at = Carbon::now();
+                $cut->closed_by = $user_id;
+                $cut->save();
+                $output = ['success' => true, 'msg' => 'Corte generado y cerrado para esa sucursal.'];
             }
-
-            $output = ['success' => true, 'msg' => 'Corte regenerado (incluyendo los que estaban cerrados).'];
         } catch (\Exception $e) {
             \Log::emergency('File:' . $e->getFile() . 'Line:' . $e->getLine() . 'Message:' . $e->getMessage());
             $output = ['success' => false, 'msg' => __('messages.something_went_wrong')];

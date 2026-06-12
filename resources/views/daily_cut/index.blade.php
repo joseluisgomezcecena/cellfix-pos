@@ -20,8 +20,9 @@
         @else
             <strong>Corte automático a las 18:00 hrs.</strong>
         @endif
-        Si tu sucursal cierra antes (ej. sábados 15:00), usa <strong>"Cerrar caja"</strong> en tu fila —
-        el heartbeat de las 18:00 ignorará las sucursales que ya estén cerradas manualmente.
+        Si tu sucursal cierra antes (ej. sábados 15:00), elige tu sucursal en el dropdown de arriba
+        y presiona <strong>Generar</strong> — el corte queda cerrado de inmediato y el heartbeat de
+        las 18:00 lo respeta.
     </div>
 
     @component('components.filters', ['title' => __('report.filters')])
@@ -79,10 +80,21 @@
                     title="{{ __('lang_v1.export_detailed') }}">
                     <i class="fas fa-file-excel"></i> @lang('lang_v1.export_detailed')
                 </button>
-                {!! Form::open(['url' => route('daily-cuts.generate'), 'method' => 'post', 'style' => 'display:inline-block;', 'onsubmit' => "return confirm('ATENCIÓN: Esto regenera los totales del corte de HOY incluso si ya estaba CERRADO. La hora de cierre se conserva pero los montos se actualizan. ¿Continuar?');"]) !!}
+                {{-- Dropdown + botón Generar.
+                     • Si eligen "Todas" → refresca todas (sin cerrar). Útil para ver datos en vivo.
+                     • Si eligen una sucursal → genera Y CIERRA esa sucursal (acción del cajero al terminar). --}}
+                {!! Form::open(['url' => route('daily-cuts.generate'), 'method' => 'post', 'style' => 'display:inline-block;', 'id' => 'generate_form',
+                    'onsubmit' => "var sel=document.getElementById('generate_location_id'); if(sel.value && sel.value!=='all'){ return confirm('Esto VA A GENERAR Y CERRAR el corte de la sucursal seleccionada. Una vez cerrado el corte queda fijo (no se actualiza con ventas posteriores). ¿Continuar?'); } return true;"]) !!}
                     {!! Form::hidden('date', \Carbon\Carbon::now()->toDateString()) !!}
-                    <button type="submit" class="tw-dw-btn tw-bg-gradient-to-r tw-from-red-600 tw-to-red-500 tw-text-white tw-font-bold tw-rounded-full tw-border-none" title="DESTRUCTIVO: sobreescribe totales incluso de cortes cerrados">
-                        <i class="fas fa-exclamation-triangle"></i> @lang('lang_v1.generate_now')
+                    <select name="location_id" id="generate_location_id" class="form-control" style="display:inline-block; width:auto; margin-right:6px; vertical-align:middle; height:42px; font-size:14px;">
+                        <option value="all">🏢 Todas (solo refrescar)</option>
+                        @foreach($locations as $id => $name)
+                            <option value="{{ $id }}">🔒 {{ $name }} (generar y cerrar)</option>
+                        @endforeach
+                    </select>
+                    <button type="submit" id="generate_btn"
+                        style="background: linear-gradient(to right, #16a34a, #22c55e); color: white; font-weight: bold; border: none; padding: 10px 24px; border-radius: 9999px; font-size: 14px; cursor: pointer; box-shadow: 0 2px 6px rgba(34,197,94,0.4);">
+                        <i class="fas fa-sync"></i> Generar
                     </button>
                 {!! Form::close() !!}
                 @can('business_settings.access')
@@ -139,33 +151,14 @@
                                 <a href="{{ route('daily-cuts.show', $cut->id) }}" class="btn btn-xs btn-info">
                                     <i class="fas fa-eye"></i> @lang('messages.view')
                                 </a>
-                                @if($cut->cut_date->isToday())
-                                    {{-- Generar corte sólo para esta sucursal, solo disponible HOY.
-                                         Para días pasados no aplica (ya están cerrados/inmutables). --}}
-                                    <form method="POST" action="{{ route('daily-cuts.generate') }}" style="display:inline-block;"
-                                        onsubmit="return confirm('Regenerar el corte de {{ $cut->location->name }} con los datos más recientes? @if($cut->closed_at)ATENCIÓN: este corte ya está CERRADO — los totales se actualizan pero la hora de cierre se conserva. @endif¿Continuar?');">
-                                        @csrf
-                                        <input type="hidden" name="date" value="{{ $cut->cut_date->toDateString() }}">
-                                        <input type="hidden" name="location_id" value="{{ $cut->location_id }}">
-                                        <button type="submit" class="btn btn-xs btn-primary" title="Regenera el corte SÓLO para esta sucursal con datos al instante.">
-                                            <i class="fas fa-sync"></i> Generar corte
-                                        </button>
-                                    </form>
-                                @endif
-                                @if(!$cut->closed_at)
-                                    <form method="POST" action="{{ route('daily-cuts.close') }}" style="display:inline-block;"
-                                        onsubmit="return confirm('¿Cerrar caja DEFINITIVAMENTE para {{ $cut->location->name }} ({{ $cut->cut_date->format('d/m/Y') }})? Después de esto el corte queda fijo y no se actualizará por ningún medio. Asegúrate de haber contado el efectivo físico.');">
-                                        @csrf
-                                        <input type="hidden" name="date" value="{{ $cut->cut_date->toDateString() }}">
-                                        <input type="hidden" name="location_id" value="{{ $cut->location_id }}">
-                                        <button type="submit" class="btn btn-xs btn-warning" title="Cierra el corte definitivamente. El heartbeat de 18:00 lo respetará.">
-                                            <i class="fas fa-lock"></i> Cerrar caja
-                                        </button>
-                                    </form>
-                                @else
+                                {{-- Botones de Cerrar caja / Reabrir / Generar corte se consolidaron en el
+                                     dropdown de arriba: el cajero elige su sucursal y presiona Generar →
+                                     el sistema genera y cierra automáticamente. Sólo admin tiene acceso
+                                     al endpoint reopen vía URL directa por si hay que reabrir un corte. --}}
+                                @if($cut->closed_at)
                                     @can('business_settings.access')
                                         <form method="POST" action="{{ route('daily-cuts.reopen', $cut->id) }}" style="display:inline-block;"
-                                            onsubmit="return confirm('¿Reabrir este corte? Volverá a actualizarse y podría cambiar.');">
+                                            onsubmit="return confirm('¿Reabrir este corte? Volverá a estar mutable y podría cambiar con ventas posteriores.');">
                                             @csrf
                                             <button type="submit" class="btn btn-xs btn-default" title="Solo admin. Vuelve a hacer el corte mutable.">
                                                 <i class="fas fa-lock-open"></i> Reabrir
