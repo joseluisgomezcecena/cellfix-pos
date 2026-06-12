@@ -23,9 +23,16 @@
                                     ->where('id', session('user.business_id'))
                                     ->value('cash_exchange_rate') ?: 18.00;
                             @endphp
-                            <input type="number" min="0" step="0.01" class="form-control" id="cash_exchange_rate"
+                            {{-- Solo lectura: el tipo de cambio se ajusta en /exchange-rate (admin),
+                                 NO en el POS. El JS sigue leyendo $('#cash_exchange_rate').val(). --}}
+                            <input type="number" min="0" step="0.01" id="cash_exchange_rate"
                                 value="{{ number_format($live_exchange_rate, 2, '.', '') }}"
-                                style="height: 42px;">
+                                readonly tabindex="-1"
+                                title="Configurado por administración en Tipo de cambio"
+                                style="height: 42px; background-color: #f1f3f5; border: 1px solid #dee2e6; border-radius: 4px; padding: 6px 10px; width: 100%; font-weight: bold; color: #495057; cursor: not-allowed;">
+                            <small class="text-muted" style="display: block; margin-top: 4px;">
+                                <i class="fas fa-info-circle"></i> Se ajusta desde administración
+                            </small>
                         </div>
                     </div>
                 </div>
