@@ -983,16 +983,22 @@ $(document).ready(function() {
 
     $(document).on('click', '.add_new_customer', function() {
         $('#customer_id').select2('close');
-        var name = $(this).data('name');
-        $('.contact_modal')
-            .find('input#name')
-            .val(name);
-        $('.contact_modal')
-            .find('select#contact_type')
+        var search_term = $(this).data('name') || '';
+
+        // If the search term looks like a phone number (7+ digits, allowing +, -, (, ), spaces),
+        // pre-fill `mobile` instead of `name` so cashiers don't re-type the number they just searched.
+        var stripped = String(search_term).replace(/[\s\-\(\)\+]/g, '');
+        var is_phone = /^\d{7,}$/.test(stripped);
+
+        var $modal = $('.contact_modal');
+        $modal.find('input#name').val(is_phone ? '' : search_term);
+        $modal.find('input#mobile').val(is_phone ? stripped : '');
+
+        $modal.find('select#contact_type')
             .val('customer')
             .closest('div.contact_type_div')
             .addClass('hide');
-        $('.contact_modal').modal('show');
+        $modal.modal('show');
     });
     $('form#quick_add_contact')
         .submit(function(e) {
