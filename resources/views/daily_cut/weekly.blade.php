@@ -30,9 +30,11 @@
                         @php
                             // Prepend "Todas las sucursales (sumadas)" como opción explícita
                             // con value="all". El default sigue siendo "ninguna seleccionada".
-                            $locations_with_all = collect(['all' => '🏢 Todas las sucursales (sumadas)'])
-                                ->merge(is_object($locations) ? $locations->toArray() : (array) $locations)
-                                ->all();
+                            // Union (+) en vez de Collection::merge(): merge() llama array_merge()
+                            // que REINDEXA las claves numéricas (id=6 → 0, id=7 → 1, ...) y rompía
+                            // el filtro porque la URL terminaba con location_id=0,1,2 en vez de 6,7,8.
+                            $locations_with_all = ['all' => '🏢 Todas las sucursales (sumadas)']
+                                + (is_object($locations) ? $locations->toArray() : (array) $locations);
                         @endphp
                         {!! Form::select('location_id', $locations_with_all, $location_id, ['class' => 'form-control select2', 'placeholder' => '— Selecciona una sucursal —', 'required', 'style' => 'width: 100%']) !!}
                     </div>
