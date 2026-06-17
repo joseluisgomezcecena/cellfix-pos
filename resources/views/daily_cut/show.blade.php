@@ -3,6 +3,24 @@
 
 @section('content')
 
+{{-- Estilos de impresión: en print escondemos navegación/sidebar/botones y mostramos
+     solo el contenido del corte. --}}
+<style>
+@media print {
+    .navbar, .main-header, .main-sidebar, .control-sidebar, .left-side, .main-footer,
+    .no-print, .btn, nav, header, footer, .sidebar-toggle, #sidebar-menu { display: none !important; }
+    .content-wrapper { margin-left: 0 !important; }
+    .content-header { padding-top: 0 !important; }
+    body { background: #fff !important; font-size: 11px; }
+    .info-box { box-shadow: none !important; border: 1px solid #ccc; }
+    .box { box-shadow: none !important; border: 1px solid #ccc; }
+    table { font-size: 10px; }
+    .print-only { display: block !important; }
+    a[href]:after { content: none !important; }
+}
+.print-only { display: none; }
+</style>
+
 <section class="content-header">
     <h1 class="tw-text-xl md:tw-text-3xl tw-font-bold tw-text-black">
         @lang('lang_v1.daily_cut'): {{ $cut->cut_date->format('d/m/Y') }}
@@ -12,16 +30,33 @@
     </h1>
 </section>
 
+{{-- Encabezado solo para impresión --}}
+<div class="print-only" style="text-align:center; margin-bottom:15px;">
+    <h2 style="margin:0;">CORTE DEL DÍA</h2>
+    <div><strong>{{ $cut->location->name ?? '' }}</strong> — {{ $cut->cut_date->format('d/m/Y') }}</div>
+    <div style="font-size:10px;">Impreso: {{ now()->format('d/m/Y H:i') }}</div>
+</div>
+
 <section class="content">
     <div class="row">
         <div class="col-md-12">
             @component('components.widget', ['class' => 'box-primary', 'title' => __('lang_v1.summary')])
                 @slot('tool')
-                    <a href="{{ route('daily-cuts.index') }}" class="btn btn-default btn-sm">
+                    <button type="button" class="btn btn-success btn-sm no-print" onclick="window.print()">
+                        <i class="fas fa-print"></i> Imprimir
+                    </button>
+                    <a href="{{ route('daily-cuts.index') }}" class="btn btn-default btn-sm no-print">
                         <i class="fas fa-arrow-left"></i> @lang('messages.back')
                     </a>
                 @endslot
 
+                @php
+                    // BRUTO: lo que físicamente pasó por el cajón (lo que el cajero cuenta al cerrar).
+                    // total_cash en BD es NETO (después de restar cambio entregado).
+                    $cash_mxn_gross = (float) ($cut->summary['mxn']['subtotal'] ?? 0);
+                    $usd_in_mxn_gross = (float) ($cut->summary['usd']['in_mxn'] ?? 0);
+                    $cash_change = ($cash_mxn_gross + $usd_in_mxn_gross) - (float) $cut->total_cash;
+                @endphp
                 <div class="row">
                     <div class="col-md-3">
                         <div class="info-box bg-green">
@@ -38,8 +73,20 @@
                         <div class="info-box bg-yellow">
                             <span class="info-box-icon"><i class="fas fa-money-bill-alt"></i></span>
                             <div class="info-box-content">
-                                <span class="info-box-text">@lang('lang_v1.cash')</span>
-                                <span class="info-box-number"><span class="display_currency" data-currency_symbol="true">{{ $cut->total_cash }}</span></span>
+                                <span class="info-box-text">@lang('lang_v1.cash') (MXN bruto)</span>
+                                <span class="info-box-number"><span class="display_currency" data-currency_symbol="true">{{ $cash_mxn_gross }}</span></span>
+                                <small>billetes MXN físicos recibidos</small>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="col-md-3">
+                        <div class="info-box" style="background-color:#0288d1; color:#fff;">
+                            <span class="info-box-icon"><i class="fas fa-dollar-sign"></i></span>
+                            <div class="info-box-content">
+                                <span class="info-box-text">USD (en MXN)</span>
+                                <span class="info-box-number"><span class="display_currency" data-currency_symbol="true">{{ $usd_in_mxn_gross }}</span></span>
+                                <small>USD ${{ number_format($cut->summary['usd']['subtotal'] ?? 0, 2) }}</small>
                             </div>
                         </div>
                     </div>
@@ -53,7 +100,21 @@
                             </div>
                         </div>
                     </div>
+                </div>
 
+                <div class="row">
+                    @if($cash_change > 0.01)
+                    <div class="col-md-3">
+                        <div class="info-box" style="background-color:#9e9e9e; color:#fff;">
+                            <span class="info-box-icon"><i class="fas fa-undo"></i></span>
+                            <div class="info-box-content">
+                                <span class="info-box-text">Cambio entregado</span>
+                                <span class="info-box-number">-<span class="display_currency" data-currency_symbol="true">{{ $cash_change }}</span></span>
+                                <small>billetes devueltos como vuelto</small>
+                            </div>
+                        </div>
+                    </div>
+                    @endif
                     <div class="col-md-3">
                         <div class="info-box bg-red">
                             <span class="info-box-icon"><i class="fas fa-receipt"></i></span>
@@ -61,6 +122,22 @@
                                 <span class="info-box-text">@lang('expense.expenses')</span>
                                 <span class="info-box-number"><span class="display_currency" data-currency_symbol="true">{{ $cut->total_expenses }}</span></span>
                             </div>
+                        </div>
+                    </div>
+                </div>
+
+                {{-- Reconciliación: confirma que bruto - cambio + tarjeta + transfer + cheque = total ventas --}}
+                <div class="row">
+                    <div class="col-md-12">
+                        <div class="alert alert-info" style="margin-top:10px; padding:10px;">
+                            <strong>Reconciliación:</strong>
+                            Efectivo bruto <span class="display_currency" data-currency_symbol="true">{{ $cash_mxn_gross + $usd_in_mxn_gross }}</span>
+                            − Cambio <span class="display_currency" data-currency_symbol="true">{{ $cash_change }}</span>
+                            + Tarjeta <span class="display_currency" data-currency_symbol="true">{{ $cut->total_card }}</span>
+                            + Transfer <span class="display_currency" data-currency_symbol="true">{{ $cut->total_transfer }}</span>
+                            + Cheque <span class="display_currency" data-currency_symbol="true">{{ $cut->total_cheque }}</span>
+                            = <strong><span class="display_currency" data-currency_symbol="true">{{ $cash_mxn_gross + $usd_in_mxn_gross - $cash_change + $cut->total_card + $cut->total_transfer + $cut->total_cheque }}</span></strong>
+                            (Total ventas: <span class="display_currency" data-currency_symbol="true">{{ $cut->total_sales }}</span>)
                         </div>
                     </div>
                 </div>
@@ -242,6 +319,65 @@
             @endcomponent
         </div>
     </div>
+
+    {{-- Lista detallada de todas las ventas del día --}}
+    @if(isset($sales) && count($sales) > 0)
+    <div class="row">
+        <div class="col-md-12">
+            @component('components.widget', ['class' => 'box-primary', 'title' => 'Listado de ventas del día (' . count($sales) . ')'])
+                <div class="table-responsive">
+                    <table class="table table-bordered table-condensed table-striped">
+                        <thead>
+                            <tr style="background-color:#f5f5f5;">
+                                <th class="text-center" style="width:30px;">#</th>
+                                <th>Hora</th>
+                                <th>Factura</th>
+                                <th>Cliente</th>
+                                <th>Vendedor</th>
+                                <th>Pago</th>
+                                <th class="text-right">Total</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @php
+                                $running_total = 0;
+                                $method_labels = [
+                                    'cash' => 'Efectivo',
+                                    'card' => 'Tarjeta',
+                                    'bank_transfer' => 'Transferencia',
+                                    'cheque' => 'Cheque',
+                                    'other' => 'Otro',
+                                ];
+                            @endphp
+                            @foreach($sales as $i => $sale)
+                                @php
+                                    $running_total += (float) $sale->final_total;
+                                    $methods = $payments_by_tx[$sale->id] ?? [];
+                                    $methods_labels = collect($methods)->unique()->map(function($m) use ($method_labels) {
+                                        return $method_labels[$m] ?? ucfirst($m);
+                                    })->implode(', ');
+                                @endphp
+                                <tr>
+                                    <td class="text-center">{{ $i + 1 }}</td>
+                                    <td><small>{{ \Carbon\Carbon::parse($sale->transaction_date)->format('H:i') }}</small></td>
+                                    <td><a href="{{ url('/sells/' . $sale->id) }}" target="_blank" class="no-print">{{ $sale->invoice_no }}</a><span class="print-only">{{ $sale->invoice_no }}</span></td>
+                                    <td>{{ $sale->customer_name }}</td>
+                                    <td><small>{{ trim($sale->vendedor) ?: '-' }}</small></td>
+                                    <td><small>{{ $methods_labels ?: '-' }}</small></td>
+                                    <td class="text-right"><span class="display_currency" data-currency_symbol="true">{{ $sale->final_total }}</span></td>
+                                </tr>
+                            @endforeach
+                            <tr class="bg-green">
+                                <th colspan="6" class="text-right">TOTAL DE VENTAS:</th>
+                                <th class="text-right"><span class="display_currency" data-currency_symbol="true">{{ $running_total }}</span></th>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            @endcomponent
+        </div>
+    </div>
+    @endif
 
     <div class="row">
         <div class="col-md-12">

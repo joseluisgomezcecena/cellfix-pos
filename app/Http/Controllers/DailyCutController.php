@@ -70,7 +70,48 @@ class DailyCutController extends Controller
             ->with('location', 'generatedBy')
             ->findOrFail($id);
 
-        return view('daily_cut.show', compact('cut'));
+        // Lista de todas las ventas del día/sucursal del cut, con cliente y monto.
+        // Usa la MISMA lógica que /sells (final_total directo) para que cuadre exacto.
+        $cut_date = $cut->cut_date->toDateString();
+        $sales = \DB::table('transactions as t')
+            ->leftJoin('contacts as c', 'c.id', '=', 't.contact_id')
+            ->leftJoin('users as u', 'u.id', '=', 't.created_by')
+            ->where('t.business_id', $business_id)
+            ->where('t.location_id', $cut->location_id)
+            ->where('t.type', 'sell')
+            ->where('t.status', 'final')
+            ->whereRaw('DATE(t.transaction_date) = ?', [$cut_date])
+            ->where(function ($q) {
+                $q->where('t.sub_type', '!=', 'project_invoice')
+                  ->orWhereNull('t.sub_type');
+            })
+            ->select(
+                't.id',
+                't.invoice_no',
+                't.transaction_date',
+                't.final_total',
+                \DB::raw("COALESCE(c.name, 'Walk-In Customer') as customer_name"),
+                \DB::raw("CONCAT(COALESCE(u.first_name,''),' ',COALESCE(u.last_name,'')) as vendedor")
+            )
+            ->orderBy('t.transaction_date')
+            ->get();
+
+        // Métodos de pago por venta para mostrar en la lista (no es por venta = un solo método;
+        // si hay pago múltiple los unimos con coma).
+        $sale_ids = $sales->pluck('id')->toArray();
+        $payments_by_tx = [];
+        if (!empty($sale_ids)) {
+            $payments = \DB::table('transaction_payments')
+                ->whereIn('transaction_id', $sale_ids)
+                ->where('is_return', 0)
+                ->select('transaction_id', 'method', 'amount')
+                ->get();
+            foreach ($payments as $p) {
+                $payments_by_tx[$p->transaction_id][] = $p->method;
+            }
+        }
+
+        return view('daily_cut.show', compact('cut', 'sales', 'payments_by_tx'));
     }
 
     /**

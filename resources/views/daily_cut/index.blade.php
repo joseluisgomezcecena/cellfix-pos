@@ -116,6 +116,7 @@
                         <th>Estado</th>
                         <th class="text-right">@lang('lang_v1.total_sales')</th>
                         <th class="text-right">@lang('lang_v1.cash')</th>
+                        <th class="text-right" title="USD convertido a MXN">USD (MXN)</th>
                         <th class="text-right">@lang('lang_v1.card')</th>
                         <th class="text-right">@lang('lang_v1.transfer')</th>
                         <th class="text-right">@lang('lang_v1.cheque')</th>
@@ -140,8 +141,19 @@
                                     </span>
                                 @endif
                             </td>
+                            @php
+                                // BRUTO: cuántos billetes FÍSICAMENTE pasaron por el cajón.
+                                // Es lo que el cajero cuenta al cerrar (sin restar cambio devuelto).
+                                // total_cash en BD = neto (recibido - cambio); para mostrar bruto
+                                // que coincida con conteo físico, sumamos los denominations.
+                                $cash_mxn_gross = (float) ($cut->summary['mxn']['subtotal'] ?? 0);
+                                $usd_in_mxn_gross = (float) ($cut->summary['usd']['in_mxn'] ?? 0);
+                                // Cambio entregado = bruto - neto. Para reconciliar con Total ventas.
+                                $cash_change = ($cash_mxn_gross + $usd_in_mxn_gross) - (float) $cut->total_cash;
+                            @endphp
                             <td class="text-right"><span class="display_currency" data-currency_symbol="true">{{ $cut->total_sales }}</span></td>
-                            <td class="text-right"><span class="display_currency" data-currency_symbol="true">{{ $cut->total_cash }}</span></td>
+                            <td class="text-right" title="Billetes MXN recibidos (bruto, sin restar cambio)"><span class="display_currency" data-currency_symbol="true">{{ $cash_mxn_gross }}</span></td>
+                            <td class="text-right" style="background-color:#e3f2fd;" title="Billetes USD recibidos convertidos a MXN"><span class="display_currency" data-currency_symbol="true">{{ $usd_in_mxn_gross }}</span></td>
                             <td class="text-right"><span class="display_currency" data-currency_symbol="true">{{ $cut->total_card }}</span></td>
                             <td class="text-right"><span class="display_currency" data-currency_symbol="true">{{ $cut->total_transfer }}</span></td>
                             <td class="text-right"><span class="display_currency" data-currency_symbol="true">{{ $cut->total_cheque }}</span></td>
@@ -170,7 +182,7 @@
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="11" class="text-center">@lang('lang_v1.no_cuts_found')</td>
+                            <td colspan="12" class="text-center">@lang('lang_v1.no_cuts_found')</td>
                         </tr>
                     @endforelse
                 </tbody>
