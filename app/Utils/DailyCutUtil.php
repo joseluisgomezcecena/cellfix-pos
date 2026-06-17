@@ -65,7 +65,10 @@ class DailyCutUtil
                 ->select(
                     'b.name as brand_name',
                     DB::raw('COALESCE(SUM(tsl.quantity), 0) as quantity'),
-                    DB::raw('COALESCE(SUM((tsl.unit_price_inc_tax * tsl.quantity) - COALESCE(tsl.line_discount_amount, 0)), 0) as subtotal')
+                    // unit_price_inc_tax ya incluye el descuento de línea (UltimatePOS lo guarda
+                    // post-descuento). Restar line_discount_amount otra vez doble-contaba el
+                    // descuento y bajaba los subtotales por marca cuando había descuento.
+                    DB::raw('COALESCE(SUM(tsl.unit_price_inc_tax * tsl.quantity), 0) as subtotal')
                 )
                 ->get();
 

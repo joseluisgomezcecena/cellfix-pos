@@ -355,7 +355,10 @@ class TechnicianController extends Controller
             $week_count = 0;
             $week_commission = 0;
             foreach ($tech_lines as $line) {
-                $line_total = (float) $line->unit_price_inc_tax * (float) $line->quantity - (float) $line->line_discount_amount;
+                // unit_price_inc_tax ya incluye el descuento de línea aplicado (UltimatePOS lo
+                // guarda post-descuento). Restar line_discount_amount otra vez doble-cuenta el
+                // descuento y dejaba líneas con descuento mostrando $0 en el reporte.
+                $line_total = (float) $line->unit_price_inc_tax * (float) $line->quantity;
                 // Si la línea tiene un override manual de comisión, usar ese; si no, la comisión por producto.
                 $commission_overridden = !is_null($line->technician_commission_override);
                 $line_commission = $commission_overridden
