@@ -207,6 +207,44 @@ class StockTransferController extends Controller
                 return $this->moduleUtil->expiredResponse(action([\App\Http\Controllers\StockTransferController::class, 'index']));
             }
 
+            // VALIDACIÓN: bloquear transfer si el origen no tiene stock suficiente.
+            // Sin esto, se permitía sacar equipos "fantasma" del Almacén que ya habían
+            // sido vendidos, lo que creaba stock duplicado en sucursal destino y
+            // obligaba a hacer correcciones manuales (que a veces no agarraban a la
+            // primera). Esto envenenaba el inventario sistemáticamente.
+            $source_location_id = $request->input('location_id');
+            $products_input = $request->input('products', []);
+            $stock_errors = [];
+            foreach ($products_input as $product) {
+                if (empty($product['variation_id'])) {
+                    continue;
+                }
+                $requested_qty = (float) $this->productUtil->num_uf($product['quantity']);
+                if ($requested_qty <= 0) {
+                    continue;
+                }
+                $available = (float) (\App\VariationLocationDetails::where('variation_id', $product['variation_id'])
+                    ->where('location_id', $source_location_id)
+                    ->value('qty_available') ?? 0);
+                if ($available < $requested_qty) {
+                    $prod_name = \DB::table('products')->where('id', $product['product_id'])->value('name');
+                    $stock_errors[] = sprintf(
+                        '%s: disponible %s, intentando transferir %s',
+                        $prod_name ?: ('producto '.$product['product_id']),
+                        rtrim(rtrim(number_format($available, 4, '.', ''), '0'), '.'),
+                        rtrim(rtrim(number_format($requested_qty, 4, '.', ''), '0'), '.')
+                    );
+                }
+            }
+            if (!empty($stock_errors)) {
+                $output = [
+                    'success' => 0,
+                    'msg' => 'No se puede crear el transfer: la sucursal de origen no tiene suficiente stock. '
+                        .implode(' | ', $stock_errors),
+                ];
+                return back()->withInput()->with('status', $output);
+            }
+
             DB::beginTransaction();
 
             $input_data = $request->only(['location_id', 'ref_no', 'transaction_date', 'additional_notes', 'shipping_charges', 'final_total']);
