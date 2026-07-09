@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git commit -m ' *)",
+      "Bash(Select-String -Pattern \"No syntax|error\")",
+      "Bash(python -c ' *)",
+      "Bash(php -r ' *)",
+      "Bash(php -l app/Http/Middleware/Language.php)",
+      "Bash(php _audit_translations.php)"
+    ]
+  }
+}

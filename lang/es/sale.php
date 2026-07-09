@@ -62,4 +62,6 @@
      'shipping' => 'Transporte',
      'shipping_details' => 'Detalles de envío',
      'shipping_charges' => 'Gastos de envío',
+     'cash' => 'Efectivo',
+     'ref_no' => 'No. de referencia',
  ];

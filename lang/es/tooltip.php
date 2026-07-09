@@ -52,4 +52,7 @@
      'accounting_method' => 'Método de contabilidad',
      'transaction_edit_days' => 'Número de días desde la Fecha de transacción hasta la cual se puede editar una transacción',
      'stock_expiry_alert' => "Lista de existencias con vencimiento en :days días <br> <small class ='text-muted'> Puede establecer el número de días en Configuración empresarial </small>",
+     'sale_product' => 'Producto de venta',
+     'sub_sku' => 'Sub SKU',
+     'shipping' => 'Detalles de envío',
  ];

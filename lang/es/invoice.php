@@ -56,4 +56,10 @@
      'show_customer' => 'Mostrar información del cliente',
      'paid_label' => 'Etiqueta de cantidad pagada',
      'customer_label' => 'Etiqueta de cliente',
+     'sequential' => 'Secuencial',
+     'random' => 'Aleatorio',
+     'invoice_scheme_for_pos' => 'Esquema de factura para POS',
+     'invoice_scheme_for_sale' => 'Esquema de factura para venta',
+     'number_type' => 'Tipo de número',
+     'number_type_tooltip' => 'Elige si el número de factura será secuencial o aleatorio',
  ];

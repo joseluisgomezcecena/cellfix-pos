@@ -213,4 +213,7 @@ return [
     'export_csv' => 'Exportar CSV',
     'export_excel' => 'Exportar Excel',
     'print' => 'Imprimir',
+    'select_product' => 'Selecciona un producto',
+    'maximum_amount' => 'Cantidad máxima',
+    'select_payment_method' => 'Selecciona el método de pago',
 ];

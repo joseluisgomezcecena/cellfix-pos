@@ -98,4 +98,9 @@
      'is_active' => 'Activo',
      'created_by' => 'Creado por',
      'additional_number_secondary' => 'Número adicional/Número secundario',
+     'land_mark' => 'Punto de referencia',
+     'street_name' => 'Nombre de la calle',
+     'building_number' => 'Número de edificio',
+     'additional_number' => 'Número adicional',
+     'p_exchange_rate' => 'Tipo de cambio de compra',
  ];

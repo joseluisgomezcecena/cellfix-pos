@@ -68,4 +68,5 @@ return [
     // Additional missing keys
     'please_select_business' => 'Por favor seleccione un negocio',
     'please_enter_company_name' => 'Por favor ingrese el nombre de la empresa',
+    'company_name_readonly' => 'El nombre de la empresa no se puede modificar después de creada',
 ];

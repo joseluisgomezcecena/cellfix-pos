@@ -24,4 +24,5 @@
      'expense_for' => 'Gasto por',
      'expense_for_help' => 'Elija el usuario (correo electrónico/nombre de usuario) al que está relacionado el gasto (Opcional)',
     'import_expense' => 'Importar gasto',
+    'date_format_instruction' => 'Formato de fecha: YYYY-MM-DD (por ejemplo 2026-01-31)',
  ];
