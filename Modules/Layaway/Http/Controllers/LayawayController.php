@@ -55,6 +55,9 @@ class LayawayController extends Controller
             ->leftJoin('variations as v', 'v.id', '=', 'li.variation_id')
             ->leftJoin('contacts as c', 'c.id', '=', 'l.contact_id')
             ->leftJoin('business_locations as bl', 'bl.id', '=', 'l.business_location_id')
+            // El apartador es el created_by de la transacción del apartado (no del layaway)
+            ->leftJoin('transactions as t', 't.layaway_id', '=', 'l.id')
+            ->leftJoin('users as u', 'u.id', '=', 't.created_by')
             ->where('l.business_id', $business_id)
             ->whereIn('l.status', ['pending', 'active']);
 
@@ -66,25 +69,38 @@ class LayawayController extends Controller
         }
 
         $rows = $query->select([
+            'l.id as layaway_id',
             'bl.name as location_name',
             'p.name as product_name',
             DB::raw('COALESCE(v.sub_sku, p.sku) as imei'),
             'c.name as customer',
             'li.quantity',
             'l.layaway_number',
+            'l.total_amount',
+            'l.down_payment_amount',
             'l.balance_due',
             'l.payment_deadline',
             'l.status',
-        ])->orderBy('bl.name')->orderBy('p.name')->get();
+            'l.created_at as apartado_at',
+            DB::raw("CONCAT(COALESCE(u.first_name,''),' ',COALESCE(u.last_name,'')) as apartador"),
+            // Total pagado: suma de todos los abonos hasta la fecha
+            DB::raw('(SELECT COALESCE(SUM(lp.amount),0) FROM layaway_payments lp WHERE lp.layaway_id = l.id) as total_paid'),
+            DB::raw('DATEDIFF(NOW(), l.created_at) as dias_transcurridos'),
+        ])->orderBy('bl.name')->orderBy('l.created_at', 'desc')->get();
 
         $by_location = [];
+        $totals = ['n_equipos' => 0, 'total_valor' => 0, 'total_pagado' => 0, 'total_por_cobrar' => 0];
         foreach ($rows as $r) {
             $by_location[$r->location_name ?: 'Sin sucursal'][] = $r;
+            $totals['n_equipos'] += (float) $r->quantity;
+            $totals['total_valor'] += (float) $r->total_amount;
+            $totals['total_pagado'] += (float) $r->total_paid;
+            $totals['total_por_cobrar'] += (float) $r->balance_due;
         }
 
         $locations = BusinessLocation::forDropdown($business_id);
 
-        return view('layaway::reserved_equipos', compact('by_location', 'locations', 'location_id'));
+        return view('layaway::reserved_equipos', compact('by_location', 'totals', 'locations', 'location_id'));
     }
 
     /**

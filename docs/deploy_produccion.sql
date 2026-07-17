@@ -300,6 +300,13 @@ PREPARE st FROM @s;
 EXECUTE st;
 DEALLOCATE PREPARE st;
 
+-- Nota: el índice activity_log_subject_lookup NO es necesario aplicar aquí.
+-- La Capa 4 (visibilidad de ediciones en /sells) se rediseñó para hacer UNA sola
+-- query agregada por página en vez de subqueries correlacionadas. Con ese
+-- rediseño el performance es aceptable incluso sin índice adicional. Si en el
+-- futuro activity_log crece mucho más y se nota lentitud, se puede agregar:
+--   ALTER TABLE activity_log ADD INDEX activity_log_subject_lookup (subject_type, subject_id)
+
 -- ============ LIMPIEZA DE DATOS (marcas con formula de Excel) ============
 DELETE FROM `brands`
  WHERE `name` LIKE '=%'

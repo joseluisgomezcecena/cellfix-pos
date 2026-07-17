@@ -23,33 +23,46 @@
         {!! Form::close() !!}
     @endcomponent
 
-    @php $gran_total = 0; @endphp
     @forelse($by_location as $loc_name => $items)
         @component('components.widget', ['class' => 'box-primary', 'title' => strtoupper($loc_name) . ' (' . count($items) . ')'])
             <div class="table-responsive">
-                <table class="table table-bordered table-striped" style="font-size:13px;">
+                <table class="table table-bordered table-striped" style="font-size:12px;">
                     <thead>
                         <tr class="bg-light-blue">
+                            <th>Fecha apartado</th>
+                            <th>Días</th>
                             <th>IMEI / SKU</th>
                             <th>@lang('sale.product')</th>
                             <th>@lang('contact.customer')</th>
                             <th class="text-center">@lang('sale.qty')</th>
                             <th># @lang('lang_v1.layaway')</th>
+                            <th class="text-right">Precio total</th>
+                            <th class="text-right">Anticipo</th>
+                            <th class="text-right">Pagado</th>
                             <th class="text-right">@lang('lang_v1.balance_due')</th>
+                            <th>Vendedor</th>
                             <th>@lang('lang_v1.payment_deadline')</th>
                             <th>@lang('sale.status')</th>
                         </tr>
                     </thead>
                     <tbody>
                         @foreach($items as $r)
-                            @php $gran_total += (float) $r->quantity; @endphp
                             <tr>
+                                <td>{{ $r->apartado_at ? \Carbon\Carbon::parse($r->apartado_at)->format('d/m/Y') : '—' }}</td>
+                                <td class="text-center">
+                                    @php $dias = (int) $r->dias_transcurridos; @endphp
+                                    <span class="label label-{{ $dias > 30 ? 'danger' : ($dias > 15 ? 'warning' : 'default') }}">{{ $dias }}d</span>
+                                </td>
                                 <td><strong>{{ $r->imei }}</strong></td>
                                 <td>{{ $r->product_name }}</td>
                                 <td>{{ $r->customer ?: '—' }}</td>
                                 <td class="text-center">{{ (float) $r->quantity }}</td>
                                 <td>{{ $r->layaway_number }}</td>
-                                <td class="text-right">${{ number_format($r->balance_due, 2) }}</td>
+                                <td class="text-right">${{ number_format($r->total_amount, 2) }}</td>
+                                <td class="text-right"><small>${{ number_format($r->down_payment_amount, 2) }}</small></td>
+                                <td class="text-right"><strong style="color:#2e7d32">${{ number_format($r->total_paid, 2) }}</strong></td>
+                                <td class="text-right"><strong style="color:#c62828">${{ number_format($r->balance_due, 2) }}</strong></td>
+                                <td><small>{{ trim($r->apartador) ?: '—' }}</small></td>
                                 <td>{{ $r->payment_deadline ? \Carbon\Carbon::parse($r->payment_deadline)->format('d/m/Y') : '' }}</td>
                                 <td>
                                     @php $colors = ['pending' => 'label-warning', 'active' => 'label-primary']; @endphp
@@ -67,9 +80,45 @@
         </div>
     @endforelse
 
-    @if($gran_total > 0)
-        <div class="alert alert-warning">
-            <strong>Total de equipos apartados:</strong> {{ (int) $gran_total }}
+    @if(!empty($totals) && $totals['n_equipos'] > 0)
+        <div class="row" style="margin-top:20px;">
+            <div class="col-md-3">
+                <div class="info-box bg-blue">
+                    <span class="info-box-icon"><i class="fas fa-box"></i></span>
+                    <div class="info-box-content">
+                        <span class="info-box-text">Equipos apartados</span>
+                        <span class="info-box-number">{{ (int) $totals['n_equipos'] }}</span>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="info-box bg-yellow">
+                    <span class="info-box-icon"><i class="fas fa-tag"></i></span>
+                    <div class="info-box-content">
+                        <span class="info-box-text">Valor total de los equipos</span>
+                        <span class="info-box-number">${{ number_format($totals['total_valor'], 2) }}</span>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="info-box bg-green">
+                    <span class="info-box-icon"><i class="fas fa-piggy-bank"></i></span>
+                    <div class="info-box-content">
+                        <span class="info-box-text">Dinero en cajas del equipo</span>
+                        <span class="info-box-number">${{ number_format($totals['total_pagado'], 2) }}</span>
+                        <small>(no está en la caja registradora)</small>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="info-box bg-red">
+                    <span class="info-box-icon"><i class="fas fa-hand-holding-usd"></i></span>
+                    <div class="info-box-content">
+                        <span class="info-box-text">Por cobrar (falta)</span>
+                        <span class="info-box-number">${{ number_format($totals['total_por_cobrar'], 2) }}</span>
+                    </div>
+                </div>
+            </div>
         </div>
     @endif
 

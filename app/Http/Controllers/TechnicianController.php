@@ -276,17 +276,34 @@ class TechnicianController extends Controller
             ->pluck('commission_amount', 'product_id')
             ->toArray();
 
+        // REGLA DE APARTADOS (misma que DailyCutUtil, commit 98ce00f):
+        // Reparaciones asociadas a un apartado se consolidan en el día de liquidación,
+        // no en el día del apartado. Reparaciones sin apartado siguen por transaction_date.
+        // Vendedor: para reparaciones apartadas, quien liquidó; para el resto, quien creó.
+        $start_dt = $start->toDateTimeString();
+        $end_dt = $end->toDateTimeString();
         $query = \DB::table('transaction_sell_lines as tsl')
             ->join('transactions as t', 't.id', '=', 'tsl.transaction_id')
             ->join('products as p', 'p.id', '=', 'tsl.product_id')
             ->leftJoin('brands as b', 'b.id', '=', 'p.brand_id')
             ->leftJoin('contacts as c', 'c.id', '=', 't.contact_id')
             ->leftJoin('users as u', 'u.id', '=', 't.created_by')
+            ->leftJoin('users as u2', 'u2.id', '=', \DB::raw("(SELECT lp.processed_by FROM layaway_payments lp WHERE lp.layaway_id = t.layaway_id ORDER BY lp.id DESC LIMIT 1)"))
             ->leftJoin('business_locations as bl', 'bl.id', '=', 't.location_id')
+            ->leftJoin('layaways as tc_l', 'tc_l.id', '=', 't.layaway_id')
             ->where('t.business_id', $business_id)
             ->where('t.type', 'sell')
             ->where('t.status', 'final')
-            ->whereBetween('t.transaction_date', [$start->toDateTimeString(), $end->toDateTimeString()])
+            ->where(function ($q) use ($start_dt, $end_dt) {
+                $q->where(function ($q2) use ($start_dt, $end_dt) {
+                    $q2->whereNull('t.layaway_id')
+                        ->whereBetween('t.transaction_date', [$start_dt, $end_dt]);
+                })->orWhere(function ($q2) use ($start_dt, $end_dt) {
+                    $q2->whereNotNull('t.layaway_id')
+                        ->whereNotNull('tc_l.completed_at')
+                        ->whereBetween('tc_l.completed_at', [$start_dt, $end_dt]);
+                });
+            })
             ->whereNotNull('tsl.technician_id')
             ->select(
                 'tsl.id as line_id',
@@ -300,21 +317,23 @@ class TechnicianController extends Controller
                 'tsl.repair_anticipo',
                 'tsl.technician_commission_override',
                 't.invoice_no',
-                't.transaction_date',
+                // Fecha efectiva: apartado usa completed_at, resto transaction_date
+                \DB::raw('IF(t.layaway_id IS NOT NULL, tc_l.completed_at, t.transaction_date) as transaction_date'),
                 't.location_id',
                 't.final_total',
                 'bl.name as location_name',
                 'p.name as product_name',
                 'b.name as brand_name',
                 'c.name as customer_name',
-                \DB::raw("CONCAT(COALESCE(u.surname, ''), ' ', COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, '')) as vendedor")
+                // Vendedor efectivo: apartado usa quien liquidó, resto quien creó la venta
+                \DB::raw("IF(t.layaway_id IS NOT NULL, CONCAT(COALESCE(u2.surname, ''), ' ', COALESCE(u2.first_name, ''), ' ', COALESCE(u2.last_name, '')), CONCAT(COALESCE(u.surname, ''), ' ', COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, ''))) as vendedor")
             );
 
         if (!empty($location_id)) {
             $query->where('t.location_id', $location_id);
         }
 
-        $lines = $query->orderBy('t.transaction_date')->get();
+        $lines = $query->orderBy('transaction_date')->get();
 
         // Lookup payment info per transaction: pesos vs dollars + exchange rate
         $transaction_ids = $lines->pluck('transaction_id')->unique()->toArray();

@@ -91,24 +91,46 @@ class SalesDashboardController extends Controller
         }
 
         // ===== EQUIPOS =====
+        // REGLA DE APARTADOS (misma que DailyCutUtil): ventas normales por transaction_date,
+        // apartados consolidados en su fecha de completed_at, apartados activos EXCLUIDOS.
+        // COMISIÓN: si la transacción es de un apartado, el vendedor es quien lo LIQUIDÓ
+        // (último layaway_payment.processed_by), no quien lo apartó (t.created_by).
+        $start_dt = $start->toDateTimeString();
+        $end_dt = $end->toDateTimeString();
         $eq = DB::table('transaction_sell_lines as tsl')
             ->join('transactions as t', 't.id', '=', 'tsl.transaction_id')
             ->join('products as p', 'p.id', '=', 'tsl.product_id')
             ->join('variations as v', 'v.id', '=', 'tsl.variation_id')
+            ->leftJoin('layaways as sd_l', 'sd_l.id', '=', 't.layaway_id')
             ->where('t.business_id', $business_id)
             ->where('t.type', 'sell')->where('t.status', 'final')
-            ->whereBetween('t.transaction_date', [$start->toDateTimeString(), $end->toDateTimeString()])
+            ->where(function ($q) use ($start_dt, $end_dt) {
+                $q->where(function ($q2) use ($start_dt, $end_dt) {
+                    $q2->whereNull('t.layaway_id')
+                        ->whereBetween('t.transaction_date', [$start_dt, $end_dt]);
+                })->orWhere(function ($q2) use ($start_dt, $end_dt) {
+                    $q2->whereNotNull('t.layaway_id')
+                        ->whereNotNull('sd_l.completed_at')
+                        ->whereBetween('sd_l.completed_at', [$start_dt, $end_dt]);
+                });
+            })
             ->where('p.brand_id', $brand_equipos);
         if (! empty($location_id)) {
             $eq->where('t.location_id', $location_id);
         }
         $equipos_lines = $eq->select([
-            't.id as tx_id', 't.transaction_date', 't.created_by', 't.invoice_no',
+            't.id as tx_id',
+            // Para apartados usamos completed_at como "fecha de la venta" para que caiga en
+            // la columna del día correcto en el dashboard semanal.
+            DB::raw('IF(t.layaway_id IS NOT NULL, sd_l.completed_at, t.transaction_date) as transaction_date'),
+            // Vendedor efectivo: liquidador para apartados, creador para ventas normales
+            DB::raw("IF(t.layaway_id IS NOT NULL, (SELECT lp.processed_by FROM layaway_payments lp WHERE lp.layaway_id = t.layaway_id ORDER BY lp.id DESC LIMIT 1), t.created_by) as created_by"),
+            't.invoice_no',
             'tsl.quantity', DB::raw('(tsl.quantity * tsl.unit_price_inc_tax) as amount'),
             'p.name as product_name', 'p.sku',
             DB::raw('COALESCE(v.default_purchase_price,0) as cost'),
             DB::raw('(SELECT tp.method FROM transaction_payments tp WHERE tp.transaction_id = t.id ORDER BY tp.amount DESC LIMIT 1) as pay_method'),
-        ])->orderBy('t.transaction_date')->get();
+        ])->orderBy('transaction_date')->get();
 
         $eq_by_day = [];
         foreach ($days as $d) {
@@ -154,17 +176,29 @@ class SalesDashboardController extends Controller
         $faltan = $meta_qty - $eq_total_qty;
 
         // ===== CATEGORÍAS =====
+        // Misma regla de apartados y comisión al liquidador que EQUIPOS arriba.
         $cq = DB::table('transaction_sell_lines as tsl')
             ->join('transactions as t', 't.id', '=', 'tsl.transaction_id')
             ->join('products as p', 'p.id', '=', 'tsl.product_id')
+            ->leftJoin('layaways as sd_l2', 'sd_l2.id', '=', 't.layaway_id')
             ->where('t.business_id', $business_id)
             ->where('t.type', 'sell')->where('t.status', 'final')
-            ->whereBetween('t.transaction_date', [$start->toDateTimeString(), $end->toDateTimeString()]);
+            ->where(function ($q) use ($start_dt, $end_dt) {
+                $q->where(function ($q2) use ($start_dt, $end_dt) {
+                    $q2->whereNull('t.layaway_id')
+                        ->whereBetween('t.transaction_date', [$start_dt, $end_dt]);
+                })->orWhere(function ($q2) use ($start_dt, $end_dt) {
+                    $q2->whereNotNull('t.layaway_id')
+                        ->whereNotNull('sd_l2.completed_at')
+                        ->whereBetween('sd_l2.completed_at', [$start_dt, $end_dt]);
+                });
+            });
         if (! empty($location_id)) {
             $cq->where('t.location_id', $location_id);
         }
         $rows = $cq->select([
-            't.created_by', 'p.brand_id', 'p.category_id', 'tsl.quantity',
+            DB::raw("IF(t.layaway_id IS NOT NULL, (SELECT lp.processed_by FROM layaway_payments lp WHERE lp.layaway_id = t.layaway_id ORDER BY lp.id DESC LIMIT 1), t.created_by) as created_by"),
+            'p.brand_id', 'p.category_id', 'tsl.quantity',
             DB::raw('(tsl.quantity * tsl.unit_price_inc_tax) as amount'),
         ])->get();
 

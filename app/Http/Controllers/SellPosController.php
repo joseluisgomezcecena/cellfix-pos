@@ -846,6 +846,24 @@ class SellPosController extends Controller
             abort(403, 'Unauthorized action.');
         }
 
+        // CAPA 1: bloqueo de edición de ventas finalizadas por no-admin.
+        // Motivo: se detectó que cajeros regulares estaban editando ventas ya
+        // finalizadas para "reusar" el registro (cambiar cliente/producto/monto),
+        // lo que sobreescribía la venta original y causaba dinero fantasma en
+        // el corte + inventario incorrecto. Caso concreto documentado en
+        // docs/reporte-caso-factura-72650.md. Ahora solo admin puede editar
+        // ventas finalizadas. Los borradores (status='draft') siguen editables
+        // por el cajero como siempre.
+        $tx_check = \App\Transaction::where('business_id', $business_id)->findOrFail($id);
+        if ($tx_check->status === 'final'
+            && !auth()->user()->can('superadmin')
+            && !auth()->user()->can('business_settings.access')) {
+            return back()->with('status', [
+                'success' => 0,
+                'msg' => 'Esta venta ya está finalizada. Solo un administrador puede modificarla. Si hay un error, pídele al gerente que la anule y crea una nueva desde cero.',
+            ]);
+        }
+
         //Check if the transaction can be edited or not.
         $edit_days = request()->session()->get('business.transaction_edit_days');
         if (!$this->transactionUtil->canBeEdited($id, $edit_days)) {
@@ -1156,6 +1174,22 @@ class SellPosController extends Controller
         if (!auth()->user()->can('sell.update') && !auth()->user()->can('direct_sell.access') &&
             !auth()->user()->can('so.update') && !auth()->user()->can('edit_pos_payment')) {
             abort(403, 'Unauthorized action.');
+        }
+
+        // CAPA 1: bloqueo del guardado también, no solo del acceso al form.
+        // Aunque un cajero encuentre el URL directo (POST /sells/{id}), el backend
+        // rechaza el guardado si la venta está finalizada y el usuario no es admin.
+        // Mismo motivo que en edit(): prevención de sobreescritura de ventas.
+        $business_id_check = $request->session()->get('user.business_id');
+        $tx_check_upd = \App\Transaction::where('business_id', $business_id_check)->findOrFail($id);
+        if ($tx_check_upd->status === 'final'
+            && !auth()->user()->can('superadmin')
+            && !auth()->user()->can('business_settings.access')) {
+            return redirect()->action([\App\Http\Controllers\SellController::class, 'index'])
+                ->with('status', [
+                    'success' => 0,
+                    'msg' => 'Esta venta ya está finalizada. Solo un administrador puede modificarla.',
+                ]);
         }
 
         try {

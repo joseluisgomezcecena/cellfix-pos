@@ -217,7 +217,9 @@ class RepairOrderController extends Controller
             ->orderBy('name')
             ->get(['id', 'name']);
 
-        return view('repair_order.admin_index', compact('technicians'));
+        $locations = \App\BusinessLocation::forDropdown($business_id);
+
+        return view('repair_order.admin_index', compact('technicians', 'locations'));
     }
 
     /**
@@ -232,21 +234,66 @@ class RepairOrderController extends Controller
         }
 
         $business_id = $request->session()->get('user.business_id');
-        $term = trim($request->get('term', ''));
-        $status = $request->get('status', '');
 
-        $q = DB::table('transactions as t')
+        // DataTables server-side params
+        $draw = (int) $request->get('draw', 1);
+        $start = (int) $request->get('start', 0);
+        $length = (int) $request->get('length', 25);
+
+        // Filtros de negocio (custom)
+        $term = trim($request->input('search.value', '') ?: $request->get('term', ''));
+        $status = $request->get('status', '');
+        $start_date = $request->get('start_date');
+        $end_date = $request->get('end_date');
+        $location_id = $request->get('location_id');
+        $technician_id = $request->get('technician_id');
+
+        // "Reparación" = transacción con al menos una línea con technician_id asignado.
+        // No usamos repair_status como filtro porque casi ninguna reparación histórica
+        // lo tiene poblado (20 de 2,827 al 07/2026). El filtro pending/delivered sí
+        // usa repair_status para las que sí lo tienen.
+        $baseQuery = DB::table('transactions as t')
             ->leftJoin('contacts as c', 'c.id', '=', 't.contact_id')
+            ->leftJoin('business_locations as bl', 'bl.id', '=', 't.location_id')
             ->where('t.business_id', $business_id)
             ->where('t.type', 'sell')
-            ->whereNotNull('t.repair_status');
+            ->where('t.status', 'final')
+            ->whereExists(function ($sub) use ($technician_id) {
+                $sub->select(DB::raw(1))
+                    ->from('transaction_sell_lines as tsl_r')
+                    ->whereRaw('tsl_r.transaction_id = t.id')
+                    ->whereNotNull('tsl_r.technician_id');
+                if (!empty($technician_id)) {
+                    $sub->where('tsl_r.technician_id', $technician_id);
+                }
+            });
 
-        if (in_array($status, ['pending', 'delivered'])) {
-            $q->where('t.repair_status', $status);
+        // Filtro por estado — con la misma lógica que la UI:
+        //   - 'pending' → solo las que tienen repair_status='pending' explícito
+        //   - 'delivered' → las que tienen repair_status='delivered' O NULL
+        //     (NULL = transacción finalizada sin marca explícita = ya entregada por default)
+        if ($status === 'pending') {
+            $baseQuery->where('t.repair_status', 'pending');
+        } elseif ($status === 'delivered') {
+            $baseQuery->where(function ($w) {
+                $w->where('t.repair_status', 'delivered')
+                    ->orWhereNull('t.repair_status');
+            });
+        }
+
+        if (!empty($start_date)) {
+            $baseQuery->whereRaw('DATE(t.transaction_date) >= ?', [$start_date]);
+        }
+        if (!empty($end_date)) {
+            $baseQuery->whereRaw('DATE(t.transaction_date) <= ?', [$end_date]);
+        }
+
+        if (!empty($location_id)) {
+            $baseQuery->where('t.location_id', $location_id);
         }
 
         if ($term !== '') {
-            $q->where(function ($w) use ($term) {
+            $baseQuery->where(function ($w) use ($term) {
                 $w->where('c.name', 'like', "%{$term}%")
                     ->orWhere('c.mobile', 'like', "%{$term}%")
                     ->orWhere('c.supplier_business_name', 'like', "%{$term}%")
@@ -260,14 +307,27 @@ class RepairOrderController extends Controller
             });
         }
 
-        $orders = $q->select(
-            't.id', 't.invoice_no', 't.transaction_date', 't.repair_status', 't.final_total',
-            'c.name as customer', 'c.mobile'
-        )->orderBy('t.transaction_date', 'desc')->limit(50)->get();
+        // recordsTotal = total sin filtros de búsqueda pero con el filtro base
+        // (para el datatables mostrar "N of M"). Aquí lo simplificamos y usamos
+        // el filtered para ambos porque el filtro base ya define "reparaciones".
+        $recordsFiltered = (clone $baseQuery)->count();
+        $recordsTotal = $recordsFiltered;
 
-        $result = [];
+        // Paginación
+        $orders = $baseQuery
+            ->select(
+                't.id', 't.invoice_no', 't.transaction_date', 't.repair_status', 't.final_total',
+                't.location_id',
+                'c.name as customer', 'c.mobile',
+                'bl.name as location_name'
+            )
+            ->orderBy('t.transaction_date', 'desc')
+            ->limit($length > 0 ? $length : 25)
+            ->offset($start)
+            ->get();
+
+        $data = [];
         foreach ($orders as $o) {
-            // Producto(s) y técnico(s) actualmente asignados (puede ser uno o varios distintos)
             $lines = DB::table('transaction_sell_lines as tsl')
                 ->join('products as p', 'p.id', '=', 'tsl.product_id')
                 ->leftJoin('technicians as tc', 'tc.id', '=', 'tsl.technician_id')
@@ -276,26 +336,31 @@ class RepairOrderController extends Controller
                 ->get();
 
             $products = $lines->pluck('product_name')->unique()->implode(', ');
-            $technicians = $lines->pluck('technician_name')->filter()->unique()->implode(', ');
+            $technicians_names = $lines->pluck('technician_name')->filter()->unique()->implode(', ');
             $current_technician_id = $lines->pluck('technician_id')->filter()->unique();
-            // Si todas las líneas tienen el mismo técnico, devolvemos ese id; si difieren, null.
             $current_technician_id = $current_technician_id->count() === 1 ? $current_technician_id->first() : null;
 
-            $result[] = [
+            $data[] = [
                 'id' => $o->id,
                 'invoice_no' => $o->invoice_no,
                 'date' => Carbon::parse($o->transaction_date)->format('d/m/Y H:i'),
                 'customer' => $o->customer ?: 'Walk-In',
                 'mobile' => $o->mobile,
                 'products' => $products,
-                'technician' => $technicians ?: '— sin asignar —',
+                'technician' => $technicians_names ?: '— sin asignar —',
                 'current_technician_id' => $current_technician_id,
                 'repair_status' => $o->repair_status,
+                'location' => $o->location_name,
                 'total' => (float) $o->final_total,
             ];
         }
 
-        return response()->json(['orders' => $result]);
+        return response()->json([
+            'draw' => $draw,
+            'recordsTotal' => $recordsTotal,
+            'recordsFiltered' => $recordsFiltered,
+            'data' => $data,
+        ]);
     }
 
     /**

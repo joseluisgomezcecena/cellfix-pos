@@ -156,9 +156,34 @@ class SellController extends Controller
         
         $baseQuery->where('transactions.business_id', $business_id)
             ->where('transactions.type', $sale_type)
-            ->where('transactions.status', 'final')
-            ->whereRaw('DATE(transactions.transaction_date) >= ?', [$start_date])
-            ->whereRaw('DATE(transactions.transaction_date) <= ?', [$end_date]);
+            ->where('transactions.status', 'final');
+
+        // REGLA DE APARTADOS (misma que DailyCutUtil::compute, commit 98ce00f):
+        //   A) Venta normal (layaway_id NULL) → filtra por transaction_date.
+        //   B) Apartado COMPLETADO en el rango → filtra por layaways.completed_at.
+        //      El apartado aparece el día que el cliente se lleva el equipo, NO
+        //      el día del anticipo. El dinero del anticipo vive en la caja del
+        //      equipo hasta liquidación, así que no era "venta de ese día".
+        //   C) Apartado ACTIVO (layaway_id NOT NULL AND completed_at IS NULL) → EXCLUIDO
+        //      de todas las fechas. El dinero aún no entra a la caja registradora.
+        if ($sale_type == 'sell') {
+            $baseQuery->leftJoin('layaways as sc_l', 'sc_l.id', '=', 'transactions.layaway_id')
+                ->where(function ($q) use ($start_date, $end_date) {
+                    $q->where(function ($q2) use ($start_date, $end_date) {
+                        $q2->whereNull('transactions.layaway_id')
+                            ->whereRaw('DATE(transactions.transaction_date) >= ?', [$start_date])
+                            ->whereRaw('DATE(transactions.transaction_date) <= ?', [$end_date]);
+                    })->orWhere(function ($q2) use ($start_date, $end_date) {
+                        $q2->whereNotNull('transactions.layaway_id')
+                            ->whereNotNull('sc_l.completed_at')
+                            ->whereRaw('DATE(sc_l.completed_at) >= ?', [$start_date])
+                            ->whereRaw('DATE(sc_l.completed_at) <= ?', [$end_date]);
+                    });
+                });
+        } else {
+            $baseQuery->whereRaw('DATE(transactions.transaction_date) >= ?', [$start_date])
+                ->whereRaw('DATE(transactions.transaction_date) <= ?', [$end_date]);
+        }
 
         // Filtros para sell (excluir project_invoice)
         if ($sale_type == 'sell') {
@@ -220,24 +245,40 @@ class SellController extends Controller
             });
         }
 
-        // OPTIMIZACIÓN 3: COUNT simplificado (sin todos los JOINs)
-        // Solo contar en la tabla principal con filtros básicos
+        // OPTIMIZACIÓN 3: COUNT simplificado (sin todos los JOINs).
+        // IMPORTANTE: como el JOIN con layaways introduce otra columna business_id/location_id,
+        // hay que calificar TODAS las columnas con el nombre de tabla o MySQL tira error
+        // "Column ... in where clause is ambiguous".
         $countQuery = \DB::table('transactions')
-            ->where('business_id', $business_id)
-            ->where('type', $sale_type)
-            ->where('status', 'final')
-            ->whereRaw('DATE(transaction_date) >= ?', [$start_date])
-            ->whereRaw('DATE(transaction_date) <= ?', [$end_date]);
+            ->where('transactions.business_id', $business_id)
+            ->where('transactions.type', $sale_type)
+            ->where('transactions.status', 'final');
 
         if ($sale_type == 'sell') {
-            $countQuery->where(function ($query) {
-                $query->where('sub_type', '!=', 'project_invoice')
-                      ->orWhereNull('sub_type');
-            });
+            // Misma regla de apartados que baseQuery (arriba).
+            $countQuery->leftJoin('layaways as sc_l2', 'sc_l2.id', '=', 'transactions.layaway_id')
+                ->where(function ($q) use ($start_date, $end_date) {
+                    $q->where(function ($q2) use ($start_date, $end_date) {
+                        $q2->whereNull('transactions.layaway_id')
+                            ->whereRaw('DATE(transactions.transaction_date) >= ?', [$start_date])
+                            ->whereRaw('DATE(transactions.transaction_date) <= ?', [$end_date]);
+                    })->orWhere(function ($q2) use ($start_date, $end_date) {
+                        $q2->whereNotNull('transactions.layaway_id')
+                            ->whereNotNull('sc_l2.completed_at')
+                            ->whereRaw('DATE(sc_l2.completed_at) >= ?', [$start_date])
+                            ->whereRaw('DATE(sc_l2.completed_at) <= ?', [$end_date]);
+                    });
+                })->where(function ($query) {
+                    $query->where('transactions.sub_type', '!=', 'project_invoice')
+                          ->orWhereNull('transactions.sub_type');
+                });
+        } else {
+            $countQuery->whereRaw('DATE(transactions.transaction_date) >= ?', [$start_date])
+                ->whereRaw('DATE(transactions.transaction_date) <= ?', [$end_date]);
         }
 
         if ($permitted_locations != 'all') {
-            $countQuery->whereIn('location_id', $permitted_locations);
+            $countQuery->whereIn('transactions.location_id', $permitted_locations);
         }
 
         $recordsFiltered = $countQuery->count();
@@ -280,7 +321,11 @@ class SellController extends Controller
             \DB::raw('EXISTS(SELECT 1 FROM transactions returns WHERE returns.return_parent_id = transactions.id AND returns.type = "sell_return") as return_exists'),
             \DB::raw('(SELECT SUM(returns.final_total) FROM transactions returns WHERE returns.return_parent_id = transactions.id AND returns.type = "sell_return") as amount_return'),
             \DB::raw('(SELECT SUM(tp2.amount) FROM transaction_payments tp2 INNER JOIN transactions returns2 ON tp2.transaction_id = returns2.id WHERE returns2.return_parent_id = transactions.id AND returns2.type = "sell_return") as return_paid'),
-            \DB::raw('(SELECT returns3.id FROM transactions returns3 WHERE returns3.return_parent_id = transactions.id AND returns3.type = "sell_return" ORDER BY returns3.id DESC LIMIT 1) as return_transaction_id')
+            \DB::raw('(SELECT returns3.id FROM transactions returns3 WHERE returns3.return_parent_id = transactions.id AND returns3.type = "sell_return" ORDER BY returns3.id DESC LIMIT 1) as return_transaction_id'),
+            // CAPA 4: edit_count y last_edited_at NO se calculan aquí como subqueries
+            // porque activity_log tiene 100K+ filas y sin índice adecuado ralentiza
+            // el datatables a decenas de segundos. Se rellenan después del $data->get()
+            // con UNA sola query agregada sobre las 25 filas de la página actual.
         ];
         
         // Campos condicionales según módulos
@@ -356,11 +401,45 @@ class SellController extends Controller
             $dataQuery->orderBy('transactions.transaction_date', 'desc');
         }
 
-        // OPTIMIZACIÓN 5: PAGINACIÓN REAL con LIMIT y OFFSET
-        $data = $dataQuery
-            ->limit($length)
-            ->offset($start)
-            ->get();
+        // OPTIMIZACIÓN 5: PAGINACIÓN REAL con LIMIT y OFFSET.
+        // DataTables manda length=-1 cuando el usuario elige "Show all". En ese caso
+        // Laravel ignora ->limit(-1) pero SÍ agrega ->offset(0), lo que produce
+        // "OFFSET 0" sin LIMIT — MySQL rechaza esa sintaxis. Solo aplicamos ambos
+        // cuando $length es positivo.
+        $length = (int) $length;
+        if ($length > 0) {
+            $dataQuery->limit($length)->offset((int) $start);
+        }
+        $data = $dataQuery->get();
+
+        // CAPA 4: cargar contadores de edición para las 25 filas visibles en UNA
+        // sola query agregada, en vez de 2 subqueries correlacionadas por fila.
+        // Sin este cambio y sin índice en activity_log(subject_type, subject_id)
+        // el datatables tardaba ~68 segundos por página.
+        $tx_ids_for_edits = collect($data)->pluck('id')->filter()->all();
+        $edit_map = [];
+        if (!empty($tx_ids_for_edits)) {
+            $edit_rows = \DB::table('activity_log')
+                ->where('subject_type', 'App\\Transaction')
+                ->where('description', 'edited')
+                ->whereIn('subject_id', $tx_ids_for_edits)
+                ->select('subject_id',
+                    \DB::raw('COUNT(*) as edit_count'),
+                    \DB::raw('MAX(created_at) as last_edited_at'))
+                ->groupBy('subject_id')
+                ->get();
+            foreach ($edit_rows as $er) {
+                $edit_map[$er->subject_id] = [
+                    'count' => (int) $er->edit_count,
+                    'last'  => $er->last_edited_at,
+                ];
+            }
+        }
+        foreach ($data as $row) {
+            $info = $edit_map[$row->id] ?? ['count' => 0, 'last' => null];
+            $row->edit_count = $info['count'];
+            $row->last_edited_at = $info['last'];
+        }
 
         // Formatear datos para DataTables
         $payment_types = $this->transactionUtil->payment_types(null, true, $business_id);
@@ -406,14 +485,31 @@ class SellController extends Controller
             if (property_exists($row, 'crm_is_order_request') && $row->crm_is_order_request) {
                 $invoice_no .= ' <small class="label bg-yellow label-round no-print"><i class="fas fa-tasks"></i></small>';
             }
+            // CAPA 4: badge visual si la venta fue editada después de finalizada.
+            // Umbral: 1+ edición = badge amarillo; 3+ = badge rojo (más sospechoso).
+            $edit_count = property_exists($row, 'edit_count') ? (int) $row->edit_count : 0;
+            if ($edit_count > 0) {
+                $last_ed = property_exists($row, 'last_edited_at') && $row->last_edited_at
+                    ? \Carbon\Carbon::parse($row->last_edited_at)->format('d/m/Y H:i')
+                    : '';
+                $badge_color = $edit_count >= 3 ? 'bg-red' : 'bg-yellow';
+                $tooltip = sprintf('Editada %d %s. Última edición: %s',
+                    $edit_count, ($edit_count === 1 ? 'vez' : 'veces'), $last_ed);
+                $invoice_no .= ' <small class="label ' . $badge_color . ' label-round no-print" title="' . e($tooltip) . '"><i class="fas fa-pencil-alt"></i> ' . $edit_count . '</small>';
+            }
 
-            // Formatear return_due con verificaciones
+            // Formatear devoluciones: mostrar en la misma celda cuánto se reembolsó al
+            // cliente ("Devuelto") y cuánto queda pendiente ("Pendiente"). Antes solo se
+            // veía el pendiente, entonces con devoluciones parciales el gerente no sabía
+            // si el cliente ya recibió algo de vuelta o no.
             $return_due_html = '';
             if (property_exists($row, 'return_exists') && $row->return_exists) {
-                $return_due = (property_exists($row, 'amount_return') ? $row->amount_return : 0) - 
-                             (property_exists($row, 'return_paid') ? $row->return_paid : 0);
-                $return_due_html = '<span class="sell_return_due" data-orig-value="' . $return_due . '">' . 
-                    $this->transactionUtil->num_f($return_due, true) . '</span>';
+                $refunded = (float) (property_exists($row, 'return_paid') ? $row->return_paid : 0);
+                $return_due = (float) (property_exists($row, 'amount_return') ? $row->amount_return : 0) - $refunded;
+                $return_due_html = '<div style="text-align:left; font-size:11px; line-height:1.4;">'
+                    . '<span style="color:#2e7d32;">Devuelto: <strong>' . $this->transactionUtil->num_f($refunded, true) . '</strong></span><br>'
+                    . '<span class="sell_return_due" data-orig-value="' . $return_due . '" style="color:' . ($return_due > 0.01 ? '#c62828' : '#757575') . ';">Pendiente: <strong>' . $this->transactionUtil->num_f($return_due, true) . '</strong></span>'
+                    . '</div>';
             }
 
             // Formatear shipping_status
@@ -808,6 +904,20 @@ class SellController extends Controller
     {
         if (! auth()->user()->can('direct_sell.update') && ! auth()->user()->can('so.update')) {
             abort(403, 'Unauthorized action.');
+        }
+
+        // CAPA 1: bloqueo de edición de ventas finalizadas por no-admin.
+        // Mismo control que en SellPosController::edit — ver reporte
+        // docs/reporte-caso-factura-72650.md
+        $business_id_c = request()->session()->get('user.business_id');
+        $tx_check = Transaction::where('business_id', $business_id_c)->findOrFail($id);
+        if ($tx_check->status === 'final'
+            && !auth()->user()->can('superadmin')
+            && !auth()->user()->can('business_settings.access')) {
+            return back()->with('status', [
+                'success' => 0,
+                'msg' => 'Esta venta ya está finalizada. Solo un administrador puede modificarla. Si hay un error, pídele al gerente que la anule y crea una nueva desde cero.',
+            ]);
         }
 
         //Check if the transaction can be edited or not.

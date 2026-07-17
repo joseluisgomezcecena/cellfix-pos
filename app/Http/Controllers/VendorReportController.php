@@ -88,18 +88,35 @@ class VendorReportController extends Controller
             ->get();
 
         // Single query: get all sell lines in range, with vendor + brand
+        // REGLA DE APARTADOS (misma que DailyCutUtil): ventas normales por transaction_date,
+        // apartados consolidados en su fecha de completed_at, apartados activos EXCLUIDOS.
+        // COMISIÓN: para apartados el vendedor es quien LIQUIDÓ (último layaway_payment.processed_by).
+        $start_dt = $start->toDateTimeString();
+        $end_dt = $end->toDateTimeString();
         $query = \DB::table('transaction_sell_lines as tsl')
             ->join('transactions as t', 't.id', '=', 'tsl.transaction_id')
             ->join('products as p', 'p.id', '=', 'tsl.product_id')
             ->leftJoin('brands as b', 'b.id', '=', 'p.brand_id')
+            ->leftJoin('layaways as vr_l', 'vr_l.id', '=', 't.layaway_id')
             ->where('t.business_id', $business_id)
             ->where('t.type', 'sell')
             ->where('t.status', 'final')
-            ->whereBetween('t.transaction_date', [$start->toDateTimeString(), $end->toDateTimeString()])
+            ->where(function ($q) use ($start_dt, $end_dt) {
+                $q->where(function ($q2) use ($start_dt, $end_dt) {
+                    $q2->whereNull('t.layaway_id')
+                        ->whereBetween('t.transaction_date', [$start_dt, $end_dt]);
+                })->orWhere(function ($q2) use ($start_dt, $end_dt) {
+                    $q2->whereNotNull('t.layaway_id')
+                        ->whereNotNull('vr_l.completed_at')
+                        ->whereBetween('vr_l.completed_at', [$start_dt, $end_dt]);
+                });
+            })
             ->select(
                 't.id as transaction_id',
-                't.created_by',
-                't.transaction_date',
+                // Vendedor efectivo: para apartados es quien liquidó, no quien apartó.
+                \DB::raw("IF(t.layaway_id IS NOT NULL, (SELECT lp.processed_by FROM layaway_payments lp WHERE lp.layaway_id = t.layaway_id ORDER BY lp.id DESC LIMIT 1), t.created_by) as created_by"),
+                // Fecha efectiva: para apartados es la de liquidación (cae en el día correcto).
+                \DB::raw('IF(t.layaway_id IS NOT NULL, vr_l.completed_at, t.transaction_date) as transaction_date'),
                 'p.brand_id',
                 'tsl.quantity'
             );
