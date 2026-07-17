@@ -6228,6 +6228,37 @@ class TransactionUtil extends Util
             }
         }
 
+        // Auto-crear el pago del reembolso al cliente si el form envió los datos.
+        // Esto evita que la devolución quede en `payment_status=due` y le genere
+        // "crédito falso" al cliente que después se resta de su próxima venta
+        // (bug reportado: "GENERA NUMEROS NEGATIVOS Y LE QUEDA ADEUDO AL CLIENTE").
+        //
+        // Si el form no envía refund_method, asumimos 'cash' (caso más común en Celfix).
+        // Si no envía refund_amount, asumimos el total de la devolución (cerramos entera).
+        $refund_method = $input['refund_method'] ?? 'cash';
+        $refund_amount_raw = $input['refund_amount'] ?? $sell_return->final_total;
+        $refund_amount = $uf_number && is_string($refund_amount_raw)
+            ? $this->num_uf($refund_amount_raw)
+            : (float) $refund_amount_raw;
+
+        // Solo crear el pago si no hay uno ya (esto puede pasar en edits/regeneraciones)
+        $existing_refund = TransactionPayment::where('transaction_id', $sell_return->id)->exists();
+        if (! $existing_refund && $refund_amount > 0) {
+            $ref_count = $this->setAndGetReferenceCount('sell_payment', $business_id);
+            $payment_ref_no = $this->generateReferenceNumber('sell_payment', $ref_count, $business_id);
+            TransactionPayment::create([
+                'transaction_id' => $sell_return->id,
+                'business_id' => $business_id,
+                'amount' => $refund_amount,
+                'method' => $refund_method,
+                'paid_on' => \Carbon::now()->toDateTimeString(),
+                'created_by' => $user_id,
+                'payment_for' => $sell_return->contact_id,
+                'is_return' => 0, // el reembolso al cliente es la "salida" desde la caja
+                'payment_ref_no' => $payment_ref_no,
+            ]);
+        }
+
         //Update payment status
         $this->updatePaymentStatus($sell_return->id, $sell_return->final_total);
 

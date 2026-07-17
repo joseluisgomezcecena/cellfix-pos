@@ -200,6 +200,120 @@ class DailyCutUtil
             ->whereBetween('transaction_date', [$start, $end])
             ->sum('final_total');
 
+        // ---- Refunds: reembolsos por devoluciones (sell_return) del día ----
+        // El corte debe reflejar el dinero que SALIÓ del cajón por reembolsos, en
+        // el mismo método en que se le devolvió al cliente. Sin esto el corte
+        // estaba inflado — quedaba diciendo que había más cash del que físicamente
+        // había, cuando la cajera había reembolsado algo en efectivo.
+        //
+        // Bug reportado: "SI SE LE REGRESA DINERO EN EFECTIVO NO LO MARCA COMO GASTO".
+        $refunds_by_method = ['cash' => 0, 'card' => 0, 'bank_transfer' => 0, 'cheque' => 0, 'other' => 0];
+        $refunds_total = 0;
+        $refund_payments = DB::table('transaction_payments as tp')
+            ->join('transactions as t', 't.id', '=', 'tp.transaction_id')
+            ->where('t.business_id', $business_id)
+            ->where('t.location_id', $location_id)
+            ->where('t.type', 'sell_return')
+            ->where('t.status', 'final')
+            ->whereBetween('t.transaction_date', [$start, $end])
+            ->where('tp.is_return', 0)
+            ->select('tp.amount', 'tp.method')
+            ->get();
+        foreach ($refund_payments as $rp) {
+            $m = $rp->method ?? 'other';
+            if (! array_key_exists($m, $refunds_by_method)) {
+                $m = 'other';
+            }
+            $refunds_by_method[$m] += (float) $rp->amount;
+            $refunds_total += (float) $rp->amount;
+        }
+        // Los reembolsos NO se restan de $totals['cash']/'card'/etc. Se muestran como
+        // línea aparte en el corte ("Reembolsos entregados") y el "Efectivo neto a
+        // entregar" ya considera el cash reembolsado. Si los restáramos aquí, la
+        // fórmula "cambio = bruto − total_cash" del view los interpretaría como
+        // cambio extra (bug detectado en prueba con 0 ventas + reembolso cash).
+
+        // ---- Refunds detail: lista de devoluciones del día con producto/cliente/método/hora ----
+        // Para que el gerente pueda auditar cada devolución individual desde el corte.
+        // Nota UltimatePOS: la devolución (sell_return) NO tiene sus propias sell_lines.
+        // Los productos devueltos están en la venta original (return_parent_id) con
+        // quantity_returned > 0.
+        $returns_detail = [];
+        $return_txs = DB::table('transactions as t')
+            ->leftJoin('contacts as c', 'c.id', '=', 't.contact_id')
+            ->where('t.business_id', $business_id)
+            ->where('t.location_id', $location_id)
+            ->where('t.type', 'sell_return')
+            ->where('t.status', 'final')
+            ->whereBetween('t.transaction_date', [$start, $end])
+            ->select(
+                't.id',
+                't.invoice_no',
+                't.transaction_date',
+                't.final_total',
+                't.return_parent_id',
+                'c.name as customer_name'
+            )
+            ->orderBy('t.transaction_date', 'desc')
+            ->get();
+
+        if ($return_txs->isNotEmpty()) {
+            $return_ids = $return_txs->pluck('id')->toArray();
+            $parent_ids = $return_txs->pluck('return_parent_id')->filter()->toArray();
+
+            // Productos devueltos: viven en las líneas de la venta padre con quantity_returned > 0
+            $lines_by_parent = collect();
+            if (! empty($parent_ids)) {
+                $lines_by_parent = DB::table('transaction_sell_lines as tsl')
+                    ->join('products as p', 'p.id', '=', 'tsl.product_id')
+                    ->whereIn('tsl.transaction_id', $parent_ids)
+                    ->where('tsl.quantity_returned', '>', 0)
+                    ->select(
+                        'tsl.transaction_id as parent_id',
+                        'p.name as product_name',
+                        'tsl.quantity_returned'
+                    )
+                    ->get()
+                    ->groupBy('parent_id');
+            }
+
+            // Métodos de reembolso por cada devolución
+            $methods_by_tx = DB::table('transaction_payments')
+                ->whereIn('transaction_id', $return_ids)
+                ->where('is_return', 0)
+                ->select('transaction_id', 'method', 'amount')
+                ->get()
+                ->groupBy('transaction_id');
+
+            foreach ($return_txs as $rt) {
+                $products = [];
+                foreach (($lines_by_parent[$rt->return_parent_id] ?? []) as $ln) {
+                    $qty = (float) $ln->quantity_returned;
+                    if ($qty > 0) {
+                        $products[] = [
+                            'name' => $ln->product_name,
+                            'qty' => $qty,
+                        ];
+                    }
+                }
+                $methods = [];
+                foreach (($methods_by_tx[$rt->id] ?? []) as $mp) {
+                    $methods[] = [
+                        'method' => $mp->method ?? 'other',
+                        'amount' => (float) $mp->amount,
+                    ];
+                }
+                $returns_detail[] = [
+                    'invoice_no' => $rt->invoice_no,
+                    'datetime' => $rt->transaction_date,
+                    'customer' => $rt->customer_name ?? '—',
+                    'total' => (float) $rt->final_total,
+                    'products' => $products,
+                    'methods' => $methods,
+                ];
+            }
+        }
+
         // ---- Build summary JSON ----
         // Compute MXN-equivalent subtotals for the cash report
         $mxn_subtotal = $mxn_coins;
@@ -229,6 +343,12 @@ class DailyCutUtil
                 'coins' => $usd_coins,
                 'subtotal' => $usd_subtotal,
                 'in_mxn' => $usd_total_in_mxn,
+            ],
+            // Desglose de reembolsos entregados a clientes en el día
+            'refunds' => [
+                'total' => $refunds_total,
+                'by_method' => $refunds_by_method,
+                'detail' => $returns_detail,
             ],
         ];
 

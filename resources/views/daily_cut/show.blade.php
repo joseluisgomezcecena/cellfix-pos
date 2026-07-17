@@ -102,6 +102,11 @@
                     </div>
                 </div>
 
+                @php
+                    // Reembolsos entregados a clientes por devoluciones (sale del cajón).
+                    $refunds_total = (float) ($cut->summary['refunds']['total'] ?? 0);
+                    $refunds_cash = (float) ($cut->summary['refunds']['by_method']['cash'] ?? 0);
+                @endphp
                 <div class="row">
                     @if($cash_change > 0.01)
                     <div class="col-md-3">
@@ -111,6 +116,18 @@
                                 <span class="info-box-text">Cambio entregado</span>
                                 <span class="info-box-number">-<span class="display_currency" data-currency_symbol="true">{{ $cash_change }}</span></span>
                                 <small>billetes devueltos como vuelto</small>
+                            </div>
+                        </div>
+                    </div>
+                    @endif
+                    @if($refunds_total > 0.01)
+                    <div class="col-md-3">
+                        <div class="info-box" style="background-color:#e65100; color:#fff;">
+                            <span class="info-box-icon"><i class="fas fa-hand-holding-usd"></i></span>
+                            <div class="info-box-content">
+                                <span class="info-box-text">Reembolsos entregados</span>
+                                <span class="info-box-number">-<span class="display_currency" data-currency_symbol="true">{{ $refunds_total }}</span></span>
+                                <small>por devoluciones del día ({{ $refunds_cash > 0 ? '$' . number_format($refunds_cash, 2) . ' cash' : 'no cash' }})</small>
                             </div>
                         </div>
                     </div>
@@ -141,6 +158,21 @@
                         </div>
                     </div>
                 </div>
+
+                {{-- Efectivo neto a entregar: lo que la cajera físicamente debe entregar.
+                     = cash de ventas (net de cambio) − cash reembolsado a clientes. --}}
+                @if($refunds_cash > 0.01)
+                <div class="row">
+                    <div class="col-md-12">
+                        <div class="alert" style="background-color:#fff3cd; border:1px solid #ffc107; margin-top:5px; padding:10px;">
+                            <strong><i class="fas fa-cash-register"></i> Efectivo neto a entregar:</strong>
+                            <span class="display_currency" data-currency_symbol="true">{{ $cut->total_cash }}</span> (cash de ventas)
+                            − <span class="display_currency" data-currency_symbol="true">{{ $refunds_cash }}</span> (reembolsos cash)
+                            = <strong><span class="display_currency" data-currency_symbol="true">{{ $cut->total_cash - $refunds_cash }}</span></strong>
+                        </div>
+                    </div>
+                </div>
+                @endif
 
                 <div class="row">
                     <div class="col-md-3">
@@ -232,6 +264,68 @@
             @endcomponent
         </div>
     </div>
+
+    {{-- Devoluciones del día con detalle (equipo, cliente, cantidad, método, hora) --}}
+    @php $returns_detail = $summary['refunds']['detail'] ?? []; @endphp
+    @if(!empty($returns_detail))
+    <div class="row">
+        <div class="col-md-12">
+            @component('components.widget', ['class' => 'box-warning', 'title' => 'Devoluciones del día — detalle'])
+                <div class="table-responsive">
+                    <table class="table table-bordered table-striped">
+                        <thead>
+                            <tr style="background-color:#e65100; color:#fff;">
+                                <th>Fecha / hora</th>
+                                <th>Nota de crédito</th>
+                                <th>Cliente</th>
+                                <th>Equipo / producto</th>
+                                <th class="text-center">Cantidad</th>
+                                <th>Método de reembolso</th>
+                                <th class="text-right">Total devuelto</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach($returns_detail as $rt)
+                                @php
+                                    $method_labels = [
+                                        'cash' => '<span class="label" style="background:#fbc02d; color:#000;">Efectivo</span>',
+                                        'card' => '<span class="label" style="background:#1976d2; color:#fff;">Tarjeta</span>',
+                                        'bank_transfer' => '<span class="label" style="background:#607d8b; color:#fff;">Transferencia</span>',
+                                        'cheque' => '<span class="label" style="background:#455a64; color:#fff;">Cheque</span>',
+                                        'other' => '<span class="label" style="background:#9e9e9e; color:#fff;">Otro / crédito</span>',
+                                    ];
+                                    $methods_html = collect($rt['methods'])->map(function ($m) use ($method_labels) {
+                                        $lbl = $method_labels[$m['method']] ?? $method_labels['other'];
+                                        return $lbl . ' $' . number_format($m['amount'], 2);
+                                    })->implode('<br>');
+                                    $products_html = collect($rt['products'])->map(function ($p) {
+                                        return e($p['name']) . ' <small class="text-muted">(x' . rtrim(rtrim(number_format($p['qty'], 2), '0'), '.') . ')</small>';
+                                    })->implode('<br>');
+                                    $qty_total = collect($rt['products'])->sum('qty');
+                                @endphp
+                                <tr>
+                                    <td><small>{{ \Carbon\Carbon::parse($rt['datetime'])->format('d/m/Y H:i') }}</small></td>
+                                    <td><strong>{{ $rt['invoice_no'] }}</strong></td>
+                                    <td>{{ $rt['customer'] }}</td>
+                                    <td>{!! $products_html ?: '—' !!}</td>
+                                    <td class="text-center">{{ rtrim(rtrim(number_format($qty_total, 2), '0'), '.') }}</td>
+                                    <td>{!! $methods_html ?: '—' !!}</td>
+                                    <td class="text-right"><strong style="color:#c62828;">-<span class="display_currency" data-currency_symbol="true">{{ $rt['total'] }}</span></strong></td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                        <tfoot>
+                            <tr style="background-color:#fff3cd;">
+                                <td colspan="6" class="text-right"><strong>Total reembolsado:</strong></td>
+                                <td class="text-right"><strong style="color:#c62828;">-<span class="display_currency" data-currency_symbol="true">{{ $refunds_total }}</span></strong></td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+            @endcomponent
+        </div>
+    </div>
+    @endif
 
     <div class="row">
         {{-- Cash denominations: MXN --}}

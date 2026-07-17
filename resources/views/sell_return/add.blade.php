@@ -157,6 +157,45 @@
 					<span id="net_return">0</span>
 				</div>
 			</div>
+
+			{{-- Sección de reembolso al cliente. Sin esto la devolución quedaba con
+			     "saldo debido" al cliente y ese crédito falso se restaba en su próxima
+			     venta, dando números negativos. Ahora la cajera elige cómo pagó el
+			     reembolso (efectivo por default) y la devolución se cierra completa. --}}
+			<div class="row" style="margin-top:20px; padding:15px; background-color:#f8f9fa; border-radius:5px; border-left:4px solid #2196f3;">
+				<div class="col-sm-12" style="margin-bottom:10px;">
+					<strong><i class="fas fa-hand-holding-usd"></i> ¿Cómo se le pagó al cliente?</strong>
+					<small class="text-muted"> (default: efectivo por el total)</small>
+				</div>
+				<div class="col-sm-4">
+					<div class="form-group">
+						<label>Método de reembolso:</label>
+						{!! Form::select('refund_method', [
+							'cash' => 'Efectivo (del cajón)',
+							'card' => 'Reembolso a tarjeta',
+							'bank_transfer' => 'Transferencia',
+							'other' => 'Otro / crédito al cliente',
+						], 'cash', ['class' => 'form-control', 'id' => 'refund_method']) !!}
+					</div>
+				</div>
+				<div class="col-sm-4">
+					<div class="form-group">
+						<label>Monto reembolsado:</label>
+						{!! Form::text('refund_amount', null, ['class' => 'form-control input_number', 'id' => 'refund_amount', 'placeholder' => 'Deja vacío = total']); !!}
+						<small class="text-muted">Vacío = total. Menor = el resto queda como crédito pendiente.</small>
+					</div>
+				</div>
+				<div class="col-sm-4">
+					<div class="form-group">
+						<label>&nbsp;</label>
+						<div style="padding:8px; background:#fff; border:1px solid #ddd; border-radius:4px;">
+							<small><strong>Total a devolver:</strong></small><br>
+							<strong style="font-size:16px; color:#2e7d32;" id="refund_helper">$0.00</strong>
+						</div>
+					</div>
+				</div>
+			</div>
+
 			<br>
 			<div class="row">
 				<div class="col-sm-12">
@@ -212,6 +251,9 @@
 		$('span#total_return_discount').text(__currency_trans_from_en(discount, true));
 		$('span#total_return_tax').text(__currency_trans_from_en(total_tax, true));
 		$('span#net_return').text(__currency_trans_from_en(net_return_inc_tax, true));
+
+		// Actualizar el helper visual del reembolso ($ a devolver al cliente)
+		$('#refund_helper').text(__currency_trans_from_en(net_return_inc_tax, true));
 	}
 </script>
 @endsection

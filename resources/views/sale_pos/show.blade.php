@@ -480,6 +480,68 @@
         </div>
       </div>
     </div>
+
+    {{-- Sección de devoluciones: si esta venta tiene una devolución asociada,
+         muestra el total devuelto, cuánto se reembolsó al cliente y cuánto queda
+         pendiente. Antes el modal solo mostraba el total pagado / restante de la
+         venta, sin ningún indicador de que existiera una devolución. --}}
+    @php
+        $sell_return_tx = $sell->return_parent; // hasOne desde la venta padre → la devolución
+    @endphp
+    @if(! empty($sell_return_tx))
+    @php
+        $ret_refund_payments = $sell_return_tx->payment_lines()->where('is_return', 0)->get();
+        $ret_refunded_total = $ret_refund_payments->sum('amount');
+        $ret_total = (float) $sell_return_tx->final_total;
+        $ret_pending = max(0, $ret_total - $ret_refunded_total);
+        $ret_status = $sell_return_tx->payment_status;
+        $ret_status_labels = [
+            'paid' => ['Pagado', '#2e7d32'],
+            'partial' => ['Parcial', '#f57c00'],
+            'due' => ['Debido', '#c62828'],
+        ];
+        $ret_si = $ret_status_labels[$ret_status] ?? ['—', '#757575'];
+        $ret_method_labels = [
+            'cash' => ['Efectivo', '#fbc02d', '#000'],
+            'card' => ['Tarjeta', '#1976d2', '#fff'],
+            'bank_transfer' => ['Transferencia', '#607d8b', '#fff'],
+            'cheque' => ['Cheque', '#455a64', '#fff'],
+            'other' => ['Otro / crédito', '#9e9e9e', '#fff'],
+        ];
+    @endphp
+    <div class="row" style="margin-top:10px;">
+      <div class="col-sm-12">
+        <div style="padding:12px; background:#fff3e0; border-left:4px solid #e65100; border-radius:4px;">
+          <strong style="font-size:14px;"><i class="fas fa-undo"></i> Devolución aplicada a esta venta</strong>
+          <span class="label" style="background:{{ $ret_si[1] }}; color:#fff; padding:3px 8px; margin-left:8px;">{{ $ret_si[0] }}</span>
+          <a href="{{ action([\App\Http\Controllers\SellReturnController::class, 'show'], [$sell->id]) }}"
+             class="btn-modal" data-container=".view_modal" style="margin-left:8px; font-size:12px;">
+             (ver detalle)
+          </a>
+          <table class="table table-condensed" style="margin-top:8px; margin-bottom:0;">
+            <tr>
+              <td><strong>Total devuelto:</strong></td>
+              <td class="text-right"><span class="display_currency" data-currency_symbol="true">{{ $ret_total }}</span></td>
+            </tr>
+            @foreach($ret_refund_payments as $rp)
+              @php $mlbl = $ret_method_labels[$rp->method] ?? $ret_method_labels['other']; @endphp
+              <tr>
+                <td>
+                  Reembolsado al cliente — <span class="label" style="background:{{ $mlbl[1] }}; color:{{ $mlbl[2] }};">{{ $mlbl[0] }}</span>
+                  <small class="text-muted">{{ \Carbon\Carbon::parse($rp->paid_on)->format('d/m/Y H:i') }}</small>
+                </td>
+                <td class="text-right"><span style="color:#2e7d32;"><strong><span class="display_currency" data-currency_symbol="true">{{ $rp->amount }}</span></strong></span></td>
+              </tr>
+            @endforeach
+            <tr style="border-top:2px solid #ddd;">
+              <td><strong>Pendiente de entregar al cliente:</strong></td>
+              <td class="text-right"><strong style="color:{{ $ret_pending > 0.01 ? '#c62828' : '#2e7d32' }};"><span class="display_currency" data-currency_symbol="true">{{ $ret_pending }}</span></strong></td>
+            </tr>
+          </table>
+        </div>
+      </div>
+    </div>
+    @endif
     <div class="row">
       <div class="col-sm-6">
         <strong>{{ __( 'sale.sell_note')}}:</strong><br>
