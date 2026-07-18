@@ -1656,34 +1656,43 @@ class ProductUtil extends Util
 
             //Search with like condition
             if ($search_type == 'like') {
-                $query->where(function ($query) use ($search_term, $search_fields) {
-                    if (in_array('name', $search_fields)) {
-                        $query->where('products.name', 'like', '%'.$search_term.'%');
-                    }
-
-                    if (in_array('sku', $search_fields)) {
-                        $query->orWhere('sku', 'like', '%'.$search_term.'%');
-                    }
-
-                    if (in_array('sub_sku', $search_fields)) {
-                        $query->orWhere('sub_sku', 'like', '%'.$search_term.'%');
-                    }
-
-                    if (in_array('lot', $search_fields)) {
-                        $query->orWhere('pl.lot_number', 'like', '%'.$search_term.'%');
-                    }
-
-                    if (in_array('product_custom_field1', $search_fields)) {
-                        $query->orWhere('product_custom_field1', 'like', '%'.$search_term.'%');
-                    }
-                    if (in_array('product_custom_field2', $search_fields)) {
-                        $query->orWhere('product_custom_field2', 'like', '%'.$search_term.'%');
-                    }
-                    if (in_array('product_custom_field3', $search_fields)) {
-                        $query->orWhere('product_custom_field3', 'like', '%'.$search_term.'%');
-                    }
-                    if (in_array('product_custom_field4', $search_fields)) {
-                        $query->orWhere('product_custom_field4', 'like', '%'.$search_term.'%');
+                // Búsqueda por tokens: partimos el término en palabras y cada palabra
+                // debe aparecer en al menos un campo de búsqueda. Antes se buscaba el
+                // string completo con LIKE '%iphone 14%' — funcionaba con "iphone 14"
+                // pero no con "14 iphone" ni con orden invertido. Con tokens ambos
+                // funcionan, similar al autocompletado de clientes.
+                $tokens = preg_split('/\s+/', trim($search_term), -1, PREG_SPLIT_NO_EMPTY);
+                if (empty($tokens)) {
+                    $tokens = [$search_term];
+                }
+                $query->where(function ($outer) use ($tokens, $search_fields) {
+                    foreach ($tokens as $token) {
+                        $outer->where(function ($inner) use ($token, $search_fields) {
+                            if (in_array('name', $search_fields)) {
+                                $inner->where('products.name', 'like', '%'.$token.'%');
+                            }
+                            if (in_array('sku', $search_fields)) {
+                                $inner->orWhere('sku', 'like', '%'.$token.'%');
+                            }
+                            if (in_array('sub_sku', $search_fields)) {
+                                $inner->orWhere('sub_sku', 'like', '%'.$token.'%');
+                            }
+                            if (in_array('lot', $search_fields)) {
+                                $inner->orWhere('pl.lot_number', 'like', '%'.$token.'%');
+                            }
+                            if (in_array('product_custom_field1', $search_fields)) {
+                                $inner->orWhere('product_custom_field1', 'like', '%'.$token.'%');
+                            }
+                            if (in_array('product_custom_field2', $search_fields)) {
+                                $inner->orWhere('product_custom_field2', 'like', '%'.$token.'%');
+                            }
+                            if (in_array('product_custom_field3', $search_fields)) {
+                                $inner->orWhere('product_custom_field3', 'like', '%'.$token.'%');
+                            }
+                            if (in_array('product_custom_field4', $search_fields)) {
+                                $inner->orWhere('product_custom_field4', 'like', '%'.$token.'%');
+                            }
+                        });
                     }
                 });
             }
@@ -1740,9 +1749,16 @@ class ProductUtil extends Util
             $query->addSelect('pl.id as purchase_line_id', 'pl.lot_number');
         }
 
+        // Límite para el autocomplete: con búsqueda por tokens un término genérico
+        // como "iphone 14" puede matchear cientos de productos. El dropdown del POS
+        // no debería mostrar más de ~50 resultados; los primeros vienen ordenados
+        // por stock disponible (más útiles arriba).
         $data = $query->groupBy('variations.id')
-             ->orderBy('VLD.qty_available', 'desc')
-             ->get();
+             ->orderBy('VLD.qty_available', 'desc');
+        if ($search_type == 'like' && ! empty($search_term)) {
+            $data->limit(50);
+        }
+        $data = $data->get();
 
         // 🔐 Escape `name`, `variation`, `sub_sku`
         $data->transform(function ($item) {

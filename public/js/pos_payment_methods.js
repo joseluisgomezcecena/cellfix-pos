@@ -290,6 +290,14 @@ $(document).ready(function () {
             breakdown.usd_in_mxn = usd_in_mxn;
         }
 
+        // Desglose obligatorio: sin denominaciones el reporte de denominaciones no
+        // puede cuadrar contra la vista semanal (bug reportado por el equipo). Debe
+        // haber al menos un billete/moneda registrado.
+        if (Object.keys(breakdown).length === 0 || total_received <= 0) {
+            toastr.error('Debes registrar el desglose de billetes recibidos (indica cuántos $500, $200, etc. te dieron)');
+            return;
+        }
+
         // Combined denominations (legacy/flat) for the per-denom inputs, only MXN
         var denominations = mxn;
         var coins = coins_mxn;
@@ -410,7 +418,15 @@ $(document).ready(function () {
             return;
         }
 
-        var terminalId = $('#card_simple_terminal').val() || '';
+        // Terminal obligatoria cuando el negocio tiene terminales configuradas.
+        // Si el dropdown existe (@if(count($card_terminals) > 0)) debe estar seleccionado.
+        var $terminalSelect = $('#card_simple_terminal');
+        var terminalId = $terminalSelect.val() || '';
+        if ($terminalSelect.length > 0 && !terminalId) {
+            toastr.error('Debes seleccionar una terminal para el pago con tarjeta');
+            $terminalSelect.focus();
+            return;
+        }
 
         // Set first payment row: method=card, amount, card_type, and terminal
         writeFirstPaymentRow('card', amount, {

@@ -218,6 +218,21 @@ class SellController extends Controller
             }
         }
 
+        // Filtro por método de pago: la venta debe tener AL MENOS un pago con el método
+        // seleccionado (una venta puede combinar varios métodos). El frontend lo envía en
+        // d.payment_method pero el controller no lo estaba leyendo, así el dropdown no
+        // hacía nada.
+        if (!empty(request()->input('payment_method'))) {
+            $selected_method = request()->input('payment_method');
+            $baseQuery->whereExists(function ($q) use ($selected_method) {
+                $q->select(\DB::raw(1))
+                  ->from('transaction_payments')
+                  ->whereColumn('transaction_payments.transaction_id', 'transactions.id')
+                  ->where('transaction_payments.is_return', 0)
+                  ->where('transaction_payments.method', $selected_method);
+            });
+        }
+
         if (!empty(request()->input('created_by'))) {
             $baseQuery->where('transactions.created_by', request()->input('created_by'));
         }

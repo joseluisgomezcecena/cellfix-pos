@@ -379,6 +379,112 @@ class SellPosController extends Controller
                     return $this->moduleUtil->quotaExpiredResponse('invoices', $business_id, action([\App\Http\Controllers\SellPosController::class, 'index']));
                 }
 
+                // Validación Celfix: si hay pago en efectivo, exigir denomination_breakdown.
+                // Sin desglose el reporte de denominaciones no cuadra con la vista semanal
+                // (algunos pagos aparecen en total_cash pero no en el desglose de billetes).
+                if (!empty($input['payment']) && is_array($input['payment'])) {
+                    foreach ($input['payment'] as $pline) {
+                        $method = $pline['method'] ?? null;
+                        $amount_raw = $pline['amount'] ?? 0;
+                        $amount = is_string($amount_raw)
+                            ? $this->transactionUtil->num_uf($amount_raw)
+                            : (float) $amount_raw;
+                        if ($method === 'cash' && $amount > 0) {
+                            $bd = $pline['denomination_breakdown'] ?? null;
+                            $has_breakdown = false;
+                            if (!empty($bd)) {
+                                $parsed = is_string($bd) ? json_decode($bd, true) : $bd;
+                                $has_breakdown = is_array($parsed) && !empty($parsed);
+                            }
+                            if (!$has_breakdown) {
+                                $output = [
+                                    'success' => 0,
+                                    'msg' => 'Debes registrar el desglose de billetes recibidos en el pago en efectivo.',
+                                ];
+                                if (!$is_direct_sale) {
+                                    return $output;
+                                } else {
+                                    return redirect()
+                                        ->action([\App\Http\Controllers\SellController::class, 'index'])
+                                        ->with('status', $output);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Validación Celfix: si hay pago con tarjeta, exigir card_terminal_id.
+                // Antes la cajera podía cerrar la venta sin escoger terminal y después
+                // el corte no sabía en qué banco/terminal cayó ese cargo.
+                if (!empty($input['payment']) && is_array($input['payment'])) {
+                    $has_terminals = \App\CardTerminal::where('business_id', $business_id)
+                        ->where('is_active', 1)->exists();
+                    if ($has_terminals) {
+                        foreach ($input['payment'] as $pline) {
+                            $method = $pline['method'] ?? null;
+                            $amount_raw = $pline['amount'] ?? 0;
+                            $amount = is_string($amount_raw)
+                                ? $this->transactionUtil->num_uf($amount_raw)
+                                : (float) $amount_raw;
+                            if ($method === 'card' && $amount > 0 && empty($pline['card_terminal_id'])) {
+                                $output = [
+                                    'success' => 0,
+                                    'msg' => 'Debes seleccionar una terminal para el pago con tarjeta.',
+                                ];
+                                if (!$is_direct_sale) {
+                                    return $output;
+                                } else {
+                                    return redirect()
+                                        ->action([\App\Http\Controllers\SellController::class, 'index'])
+                                        ->with('status', $output);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Validación Celfix: bloquear venta a Walk-In para categorías críticas.
+                // Equipos, servicios y desbloqueos requieren cliente identificado para
+                // garantía y soporte (si más adelante hay reclamo, sin cliente asignado
+                // no hay forma de rastrear a quién se le vendió/hizo el servicio).
+                // Top-level categorías: EQUIPOS=180, SERVICIOS=187, DESBLOQUEOS=275.
+                if (!empty($input['contact_id'])) {
+                    $walk_in = $this->contactUtil->getWalkInCustomer($business_id, false);
+                    if ($walk_in && (int) $input['contact_id'] === (int) $walk_in->id) {
+                        $product_ids = collect($input['products'])
+                            ->pluck('product_id')->filter()->unique()->values()->toArray();
+                        if (!empty($product_ids)) {
+                            $critical_cat_ids = [180, 187, 275];
+                            $critical = DB::table('products as p')
+                                ->leftJoin('categories as c', 'c.id', '=', 'p.category_id')
+                                ->whereIn('p.id', $product_ids)
+                                ->where(function ($q) use ($critical_cat_ids) {
+                                    $q->whereIn('c.id', $critical_cat_ids)
+                                        ->orWhereIn('c.parent_id', $critical_cat_ids);
+                                })
+                                ->select('p.name')
+                                ->get();
+                            if ($critical->isNotEmpty()) {
+                                $names = $critical->pluck('name')->take(3)->implode(', ');
+                                if ($critical->count() > 3) {
+                                    $names .= '…';
+                                }
+                                $output = [
+                                    'success' => 0,
+                                    'msg' => 'No se puede vender a "Walk-In Customer" cuando la venta incluye equipos, servicios o desbloqueos. Selecciona (o registra) un cliente para: ' . $names,
+                                ];
+                                if (!$is_direct_sale) {
+                                    return $output;
+                                } else {
+                                    return redirect()
+                                        ->action([\App\Http\Controllers\SellController::class, 'index'])
+                                        ->with('status', $output);
+                                }
+                            }
+                        }
+                    }
+                }
+
                 $user_id = $request->session()->get('user.id');
 
                 $discount = ['discount_type' => $input['discount_type'],
