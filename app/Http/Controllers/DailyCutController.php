@@ -268,6 +268,7 @@ class DailyCutController extends Controller
             'usd_coins' => 0,
             'usd_subtotal' => 0,
             'usd_in_mxn' => 0,
+            'cambio_cash' => 0,
             'total_cash' => 0,
             'total_card' => 0,
             'terminals' => array_fill_keys($terminal_names, 0),
@@ -328,7 +329,18 @@ class DailyCutController extends Controller
             foreach ($row_usd_faces as $face => $count) {
                 $row_usd_subtotal += (float) $face * (int) $count;
             }
-            $row_total_cash = $row_mxn_subtotal + $row_usd_in_mxn;
+            // Cambio entregado como vuelto en efectivo (pagos con is_return=1 y method=cash).
+            // Este dinero salió físicamente del cajón durante ventas cuando el cliente
+            // pagó de más y se le dio cambio en efectivo. Antes no aparecía en el
+            // reporte de denominaciones y el TOTAL EFECTIVO no cuadraba con la vista
+            // semanal, que sí lo restaba.
+            $row_cambio_cash = $this->getCashChangeForDay(
+                $business_id,
+                $location_id,
+                $date->toDateString()
+            );
+            // TOTAL EFECTIVO = billetes/monedas recibidos − cambio entregado.
+            $row_total_cash = $row_mxn_subtotal + $row_usd_in_mxn - $row_cambio_cash;
             $row_total_card = $day_cuts->sum('total_card');
             $row_terminals_total = array_sum($row_terminals);
             $row_transfer = $day_cuts->sum('total_transfer');
@@ -345,6 +357,7 @@ class DailyCutController extends Controller
                 'usd_coins' => $row_usd_coins,
                 'usd_subtotal' => $row_usd_subtotal,
                 'usd_in_mxn' => $row_usd_in_mxn,
+                'cambio_cash' => $row_cambio_cash,
                 'total_cash' => $row_total_cash,
                 'total_card' => $row_total_card,
                 'terminals' => $row_terminals,
@@ -366,6 +379,7 @@ class DailyCutController extends Controller
             $totals['usd_coins'] += $row_usd_coins;
             $totals['usd_subtotal'] += $row_usd_subtotal;
             $totals['usd_in_mxn'] += $row_usd_in_mxn;
+            $totals['cambio_cash'] += $row_cambio_cash;
             $totals['total_cash'] += $row_total_cash;
             $totals['total_card'] += $row_total_card;
             foreach ($terminal_names as $name) {
@@ -377,11 +391,18 @@ class DailyCutController extends Controller
             $totals['total_dinero'] += $row_total_dinero;
         }
 
+        // Aviso de desglose incompleto: comparamos el TOTAL EFECTIVO del reporte
+        // (mxn+usd_mxn − cambio) contra el total_cash real de los cortes. Si difiere,
+        // hubo pagos cash sin denomination_breakdown registrado por la cajera.
+        $weekly_total_cash = (float) $cuts->sum('total_cash');
+        $undesglosado_cash = max(0, $weekly_total_cash - $totals['total_cash']);
+
         $locations = BusinessLocation::forDropdown($business_id);
 
         return view('daily_cut.denominations', compact(
             'rows', 'totals', 'mxn_faces', 'usd_faces', 'terminal_names',
-            'start_date', 'location_id', 'locations'
+            'start_date', 'location_id', 'locations',
+            'weekly_total_cash', 'undesglosado_cash'
         ));
     }
 
@@ -390,6 +411,27 @@ class DailyCutController extends Controller
         $names = [0 => 'DOMINGO', 1 => 'LUNES', 2 => 'MARTES', 3 => 'MIÉRCOLES', 4 => 'JUEVES', 5 => 'VIERNES', 6 => 'SÁBADO'];
 
         return $names[$dow] ?? '';
+    }
+
+    /**
+     * Suma de cambio en efectivo entregado como vuelto ese día
+     * (transaction_payments con method=cash + is_return=1, sobre ventas 'sell').
+     * Si $location_id viene vacío o 'all', suma todas las sucursales.
+     */
+    private function getCashChangeForDay($business_id, $location_id, $date)
+    {
+        $q = \DB::table('transaction_payments as tp')
+            ->join('transactions as t', 't.id', '=', 'tp.transaction_id')
+            ->where('t.business_id', $business_id)
+            ->where('t.type', 'sell')
+            ->where('t.status', 'final')
+            ->whereDate('t.transaction_date', $date)
+            ->where('tp.method', 'cash')
+            ->where('tp.is_return', 1);
+        if (!empty($location_id) && $location_id !== 'all') {
+            $q->where('t.location_id', $location_id);
+        }
+        return (float) $q->sum('tp.amount');
     }
 
     /**

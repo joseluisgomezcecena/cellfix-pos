@@ -60,13 +60,17 @@
                 </div>
                 <div class="col-sm-6">
                     <div class="form-group">
-                        {!! Form::label('transfer_location_id', __('lang_v1.location_to') . ':*') !!}
-                        {!! Form::select('transfer_location_id', $business_locations, null, [
+                        {!! Form::label('transfer_location_ids', __('lang_v1.location_to') . ':*') !!}
+                        {!! Form::select('transfer_location_ids[]', $business_locations, null, [
                             'class' => 'form-control select2',
                             'placeholder' => __('messages.please_select'),
                             'required',
-                            'id' => 'transfer_location_id',
+                            'id' => 'transfer_location_ids',
+                            'multiple' => 'multiple',
                         ]) !!}
+                        <small class="text-muted">
+                            Puedes elegir varias sucursales; se crea una transferencia por cada una con las mismas cantidades.
+                        </small>
                     </div>
                 </div>
 

@@ -112,12 +112,24 @@ $(document).ready(function() {
 
     $('form#stock_transfer_form').validate({
         rules: {
-            transfer_location_id: {
-                notEqual: function() {
-                    return $('select#location_id').val();
-                },
+            'transfer_location_ids[]': {
+                required: true,
             },
         },
+        messages: {
+            'transfer_location_ids[]': {
+                required: 'Selecciona al menos una sucursal destino',
+            },
+        },
+    });
+    // Validación adicional: el destino no puede incluir la sucursal origen.
+    $(document).on('change', '#transfer_location_ids, #location_id', function () {
+        var src = String($('#location_id').val() || '');
+        var dst = ($('#transfer_location_ids').val() || []).map(String);
+        if (src && dst.indexOf(src) !== -1) {
+            toastr.error('La sucursal origen no puede ser también destino. Se eliminó de la selección.');
+            $('#transfer_location_ids').val(dst.filter(function (v) { return v !== src; })).trigger('change.select2');
+        }
     });
     $('#save_stock_transfer').click(function(e) {
         e.preventDefault();

@@ -71,6 +71,7 @@
                         <th rowspan="2">@lang('messages.date')</th>
                         <th colspan="{{ count($mxn_faces) + 2 }}" class="group-mxn">PESOS (MXN)</th>
                         <th colspan="{{ count($usd_faces) + 3 }}" class="group-usd">DÓLARES (USD)</th>
+                        <th rowspan="2" style="background-color:#ffccbc; color:#bf360c;" title="Cambio dado como vuelto en efectivo — sale del cajón">CAMBIO EFECTIVO</th>
                         <th rowspan="2" class="total-cell">@lang('lang_v1.total_cash')</th>
                         <th rowspan="2" style="background-color: #bbdefb;">TARJETA</th>
                         @foreach($terminal_names as $name)
@@ -116,6 +117,11 @@
                             <td class="text-right group-usd">
                                 <span class="display_currency" data-currency_symbol="true">{{ $row['usd_in_mxn'] }}</span>
                             </td>
+                            <td class="text-right" style="background-color:#ffe0b2; color:#bf360c;">
+                                @if($row['cambio_cash'] > 0)
+                                    −<span class="display_currency" data-currency_symbol="true">{{ $row['cambio_cash'] }}</span>
+                                @endif
+                            </td>
                             <td class="text-right total-cell">
                                 <span class="display_currency" data-currency_symbol="true">{{ $row['total_cash'] }}</span>
                             </td>
@@ -157,6 +163,11 @@
                         <td class="text-right group-usd">
                             <span class="display_currency" data-currency_symbol="true">{{ $totals['usd_in_mxn'] }}</span>
                         </td>
+                        <td class="text-right" style="background-color:#ffab91; color:#bf360c;">
+                            @if(($totals['cambio_cash'] ?? 0) > 0)
+                                −<span class="display_currency" data-currency_symbol="true">{{ $totals['cambio_cash'] }}</span>
+                            @endif
+                        </td>
                         <td class="text-right total-cell">
                             <span class="display_currency" data-currency_symbol="true">{{ $totals['total_cash'] }}</span>
                         </td>
@@ -181,6 +192,27 @@
                 </tfoot>
             </table>
         </div>
+
+        @if(($undesglosado_cash ?? 0) > 0.01)
+        <div class="alert" style="background-color:#fff3cd; border:2px solid #f0ad4e; margin-top:15px; padding:15px;">
+            <h4 style="margin-top:0; color:#8a6d3b;"><i class="fas fa-exclamation-triangle"></i> Aviso: hay efectivo sin desglosar</h4>
+            <p style="margin-bottom:6px;">
+                El <strong>TOTAL EFECTIVO</strong> del reporte (<span class="display_currency" data-currency_symbol="true">{{ $totals['total_cash'] }}</span>)
+                es <strong>menor</strong> que el efectivo real registrado en la vista semanal
+                (<span class="display_currency" data-currency_symbol="true">{{ $weekly_total_cash }}</span>).
+            </p>
+            <p style="margin-bottom:6px;">
+                Diferencia:
+                <strong style="color:#c62828;"><span class="display_currency" data-currency_symbol="true">{{ $undesglosado_cash }}</span></strong>
+                — corresponde a pagos en efectivo donde <strong>la cajera no llenó el desglose de billetes</strong> en el modal del POS.
+            </p>
+            <p style="margin-bottom:0; font-size:12px; color:#8a6d3b;">
+                <i class="fas fa-info-circle"></i>
+                Este dinero sí entró al cajón y se contabilizó en el corte semanal; solo falta identificar en qué denominaciones vino.
+                A partir de ahora el desglose es <strong>obligatorio</strong> en pagos con efectivo — si esto sigue subiendo, es un pago viejo (previo al cambio).
+            </p>
+        </div>
+        @endif
     @endcomponent
 </section>
 
