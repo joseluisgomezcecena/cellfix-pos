@@ -70,27 +70,35 @@ class TechniciansSummarySheet implements FromArray, WithTitle, WithEvents
         $rows[] = ['REPORTE DE TÉCNICOS — RESUMEN'];
         $rows[] = ['Periodo:', $this->start->format('d/m/Y') . ' a ' . $this->end->format('d/m/Y')];
         $rows[] = [];
-        $rows[] = ['Técnico', '# Reparaciones', 'Total facturado', 'Total a pagar'];
+        $rows[] = ['Técnico', '# Reparaciones', '# Servicios', '# Total', 'Total facturado', 'Total a pagar'];
 
+        $total_repair_count = 0;
+        $total_service_count = 0;
         $total_count = 0;
         $total_billed = 0;
         $total_commission = 0;
 
         foreach ($this->data as $td) {
             $tech = $td['technician'];
+            $rep = $td['week_repair_count'] ?? 0;
+            $ser = $td['week_service_count'] ?? 0;
             $rows[] = [
                 $tech->name,
+                $rep,
+                $ser,
                 $td['week_count'],
                 $td['week_total'],
                 $td['commission_due'],
             ];
+            $total_repair_count += $rep;
+            $total_service_count += $ser;
             $total_count += $td['week_count'];
             $total_billed += $td['week_total'];
             $total_commission += $td['commission_due'];
         }
 
         $rows[] = [];
-        $rows[] = ['TOTALES', $total_count, $total_billed, $total_commission];
+        $rows[] = ['TOTALES', $total_repair_count, $total_service_count, $total_count, $total_billed, $total_commission];
 
         return $rows;
     }
@@ -185,7 +193,7 @@ class TechnicianSheet implements FromArray, WithTitle, WithEvents
                     $rows[] = $row;
                 }
                 // Day subtotal
-                $sub_row = ['', '', '', '', 'SUBTOTAL ' . $this->day_abbr[$day_info['date']->dayOfWeek] . ' (' . $day_info['count'] . ' rep.)', $day_info['subtotal']];
+                $sub_row = ['', '', '', '', 'SUBTOTAL ' . $this->day_abbr[$day_info['date']->dayOfWeek] . ' (' . ($day_info['repair_count'] ?? 0) . ' rep. + ' . ($day_info['service_count'] ?? 0) . ' serv. = ' . $day_info['count'] . ')', $day_info['subtotal']];
                 for ($i = 0; $i < $empty_cols_after_total; $i++) $sub_row[] = '';
                 if ($this->has_commission) {
                     $sub_row[] = array_sum(array_column($day_info['lines'], 'commission'));
@@ -193,7 +201,7 @@ class TechnicianSheet implements FromArray, WithTitle, WithEvents
                 $rows[] = $sub_row;
             }
             // Week total
-            $week_row = ['', '', '', '', 'TOTAL SEMANA (' . $this->tech_data['week_count'] . ' reparaciones)', $this->tech_data['week_total']];
+            $week_row = ['', '', '', '', 'TOTAL SEMANA (' . ($this->tech_data['week_repair_count'] ?? 0) . ' reparaciones + ' . ($this->tech_data['week_service_count'] ?? 0) . ' servicios = ' . $this->tech_data['week_count'] . ')', $this->tech_data['week_total']];
             for ($i = 0; $i < $empty_cols_after_total; $i++) $week_row[] = '';
             if ($this->has_commission) {
                 $week_row[] = $this->tech_data['commission_due'];

@@ -239,7 +239,12 @@ class TechnicianController extends Controller
 
         $business_id = $request->session()->get('user.business_id');
 
-        // Default start: this week's Monday
+        // Resolver rango de fechas: si el usuario marcó "rango personalizado" y ambas
+        // fechas son válidas, se usa ese rango; si no, la semana Sáb-Vie a partir
+        // de start_date (o la semana actual por default).
+        $custom_range = $request->boolean('custom_range');
+        $date_from = $request->get('date_from');
+        $date_to = $request->get('date_to');
         $start_date = $request->get('start_date');
         if (empty($start_date)) {
             $today = \Carbon\Carbon::now();
@@ -247,17 +252,31 @@ class TechnicianController extends Controller
             $daysSinceStart = ($today->dayOfWeek + 1) % 7;
             $start_date = $today->copy()->subDays($daysSinceStart)->toDateString();
         }
-        $start = \Carbon\Carbon::parse($start_date)->startOfDay();
-        $end = $start->copy()->addDays(6)->endOfDay();
+        if ($custom_range && !empty($date_from) && !empty($date_to)) {
+            $start = \Carbon\Carbon::parse($date_from)->startOfDay();
+            $end = \Carbon\Carbon::parse($date_to)->endOfDay();
+            if ($end->lt($start)) {
+                // Swap si vienen invertidas
+                [$start, $end] = [$end->startOfDay(), $start->endOfDay()];
+            }
+        } else {
+            $start = \Carbon\Carbon::parse($start_date)->startOfDay();
+            $end = $start->copy()->addDays(6)->endOfDay();
+        }
 
         $location_id = $request->get('location_id');
+        $technician_id = $request->get('technician_id');
 
-        $data = $this->buildReportData($business_id, $start, $end, $location_id);
+        $data = $this->buildReportData($business_id, $start, $end, $location_id, $technician_id);
 
         $locations = \App\BusinessLocation::forDropdown($business_id);
+        $technicians_dropdown = Technician::where('business_id', $business_id)
+            ->orderBy('name')->pluck('name', 'id');
 
         return view('technician.report', compact(
-            'data', 'start_date', 'start', 'end', 'locations', 'location_id'
+            'data', 'start_date', 'start', 'end', 'locations', 'location_id',
+            'technicians_dropdown', 'technician_id',
+            'custom_range', 'date_from', 'date_to'
         ));
     }
 
@@ -265,9 +284,12 @@ class TechnicianController extends Controller
      * Build the data array used by both the web view and the Excel export.
      * Returns an array of technicians with their repair lines grouped by day.
      */
-    public function buildReportData($business_id, $start, $end, $location_id = null)
+    public function buildReportData($business_id, $start, $end, $location_id = null, $technician_id = null)
     {
         $tech_query = Technician::where('business_id', $business_id)->orderBy('name');
+        if (!empty($technician_id)) {
+            $tech_query->where('id', $technician_id);
+        }
         $technicians = $tech_query->get();
 
         // Comisión por producto (global, igual para todos los técnicos)
@@ -372,8 +394,15 @@ class TechnicianController extends Controller
             $by_day = [];
             $week_total = 0;
             $week_count = 0;
+            $week_repair_count = 0;
+            $week_service_count = 0;
             $week_commission = 0;
             foreach ($tech_lines as $line) {
+                // Clasificación: SOLO "SERVICIO LIMPIEZA GENERAL" cuenta como servicio.
+                // Cualquier otro producto asignado al técnico se cuenta como reparación
+                // (incluidos SERVICIO EQUIPO MOJADO, SERVICIO DE MICROSOLDADURA, etc.,
+                // que son trabajos de reparación aunque el nombre empiece con SERVICIO).
+                $is_service = strcasecmp(trim((string) $line->product_name), 'SERVICIO LIMPIEZA GENERAL') === 0;
                 // unit_price_inc_tax ya incluye el descuento de línea aplicado (UltimatePOS lo
                 // guarda post-descuento). Restar line_discount_amount otra vez doble-cuenta el
                 // descuento y dejaba líneas con descuento mostrando $0 en el reporte.
@@ -390,6 +419,8 @@ class TechnicianController extends Controller
                         'lines' => [],
                         'subtotal' => 0,
                         'count' => 0,
+                        'repair_count' => 0,
+                        'service_count' => 0,
                     ];
                 }
                 $pay_info = $payments_by_tx[$line->transaction_id] ?? ['used_usd' => false, 'exchange_rate' => null, 'paid' => 0];
@@ -420,6 +451,13 @@ class TechnicianController extends Controller
                 ];
                 $by_day[$day_key]['subtotal'] += $line_total;
                 $by_day[$day_key]['count']++;
+                if ($is_service) {
+                    $by_day[$day_key]['service_count']++;
+                    $week_service_count++;
+                } else {
+                    $by_day[$day_key]['repair_count']++;
+                    $week_repair_count++;
+                }
                 $week_total += $line_total;
                 $week_count++;
                 $week_commission += $line_commission;
@@ -430,6 +468,8 @@ class TechnicianController extends Controller
                 'by_day' => $by_day,
                 'week_total' => $week_total,
                 'week_count' => $week_count,
+                'week_repair_count' => $week_repair_count,
+                'week_service_count' => $week_service_count,
                 'commission_due' => $week_commission,
             ];
         }
@@ -445,6 +485,9 @@ class TechnicianController extends Controller
 
         $business_id = $request->session()->get('user.business_id');
 
+        $custom_range = $request->boolean('custom_range');
+        $date_from = $request->get('date_from');
+        $date_to = $request->get('date_to');
         $start_date = $request->get('start_date');
         if (empty($start_date)) {
             $today = \Carbon\Carbon::now();
@@ -452,13 +495,27 @@ class TechnicianController extends Controller
             $daysSinceStart = ($today->dayOfWeek + 1) % 7;
             $start_date = $today->copy()->subDays($daysSinceStart)->toDateString();
         }
-        $start = \Carbon\Carbon::parse($start_date)->startOfDay();
-        $end = $start->copy()->addDays(6)->endOfDay();
+        if ($custom_range && !empty($date_from) && !empty($date_to)) {
+            $start = \Carbon\Carbon::parse($date_from)->startOfDay();
+            $end = \Carbon\Carbon::parse($date_to)->endOfDay();
+            if ($end->lt($start)) {
+                [$start, $end] = [$end->startOfDay(), $start->endOfDay()];
+            }
+        } else {
+            $start = \Carbon\Carbon::parse($start_date)->startOfDay();
+            $end = $start->copy()->addDays(6)->endOfDay();
+        }
         $location_id = $request->get('location_id');
+        $technician_id = $request->get('technician_id');
 
-        $data = $this->buildReportData($business_id, $start, $end, $location_id);
+        $data = $this->buildReportData($business_id, $start, $end, $location_id, $technician_id);
 
-        $filename = 'reporte_tecnicos_' . $start->toDateString() . '_a_' . $end->toDateString() . '.xlsx';
+        // Si es un solo técnico, incluir su nombre en el filename
+        $filename = 'reporte_tecnicos_' . $start->toDateString() . '_a_' . $end->toDateString();
+        if (!empty($technician_id) && !empty($data[0]['technician'])) {
+            $filename .= '_' . str_replace(' ', '_', $data[0]['technician']->name);
+        }
+        $filename .= '.xlsx';
 
         return \Maatwebsite\Excel\Facades\Excel::download(
             new \App\Exports\TechniciansReportExport($data, $start, $end),

@@ -14,13 +14,41 @@
 <section class="content">
     @component('components.filters', ['title' => __('report.filters')])
         {!! Form::open(['url' => route('technicians.report'), 'method' => 'get', 'class' => 'form-inline']) !!}
+            <div class="row" style="margin-bottom:10px;">
+                <div class="col-md-12">
+                    <label style="font-weight:normal; cursor:pointer;">
+                        {!! Form::checkbox('custom_range', 1, $custom_range ?? false, ['id' => 'custom_range_toggle']) !!}
+                        Usar rango de fechas personalizado (en lugar de semana Sáb–Vie)
+                    </label>
+                </div>
+            </div>
             <div class="row">
-                <div class="col-md-3">
+                {{-- Filtro semanal (default) --}}
+                <div class="col-md-3 filter-week-mode">
                     <div class="form-group">
                         {!! Form::label('start_date', __('lang_v1.week_start') . ' (sábado):') !!}
                         <div class="input-group">
                             <span class="input-group-addon"><i class="fa fa-calendar"></i></span>
                             {!! Form::text('start_date', $start_date, ['class' => 'form-control sat-only-datepicker', 'id' => 'start_date', 'readonly', 'autocomplete' => 'off', 'style' => 'width: 100%; background-color: #fff;']) !!}
+                        </div>
+                    </div>
+                </div>
+                {{-- Filtro rango personalizado --}}
+                <div class="col-md-3 filter-custom-mode">
+                    <div class="form-group">
+                        {!! Form::label('date_from', 'Desde:') !!}
+                        <div class="input-group">
+                            <span class="input-group-addon"><i class="fa fa-calendar"></i></span>
+                            {!! Form::date('date_from', $date_from ?? null, ['class' => 'form-control', 'id' => 'date_from', 'style' => 'width: 100%;']) !!}
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3 filter-custom-mode">
+                    <div class="form-group">
+                        {!! Form::label('date_to', 'Hasta:') !!}
+                        <div class="input-group">
+                            <span class="input-group-addon"><i class="fa fa-calendar"></i></span>
+                            {!! Form::date('date_to', $date_to ?? null, ['class' => 'form-control', 'id' => 'date_to', 'style' => 'width: 100%;']) !!}
                         </div>
                     </div>
                 </div>
@@ -31,9 +59,15 @@
                     </div>
                 </div>
                 <div class="col-md-3">
+                    <div class="form-group">
+                        {!! Form::label('technician_id', 'Técnico:') !!}
+                        {!! Form::select('technician_id', $technicians_dropdown, $technician_id, ['class' => 'form-control select2', 'placeholder' => 'Todos los técnicos', 'style' => 'width: 100%']) !!}
+                    </div>
+                </div>
+                <div class="col-md-3">
                     <div class="form-group" style="margin-top: 25px;">
                         <button type="submit" class="btn btn-primary">@lang('messages.filter')</button>
-                        <a href="{{ route('technicians.export-report', ['start_date' => $start_date, 'location_id' => $location_id]) }}" class="btn btn-success">
+                        <a href="{{ route('technicians.export-report', ['start_date' => $start_date, 'location_id' => $location_id, 'technician_id' => $technician_id, 'custom_range' => !empty($custom_range) ? 1 : null, 'date_from' => $date_from ?? null, 'date_to' => $date_to ?? null]) }}" class="btn btn-success">
                             <i class="fas fa-file-excel"></i> @lang('lang_v1.export_to_excel')
                         </a>
                         <a href="{{ route('technicians.index') }}" class="btn btn-default">
@@ -45,6 +79,22 @@
         {!! Form::close() !!}
     @endcomponent
 
+    <script type="text/javascript">
+        (function() {
+            function applyMode() {
+                var isCustom = document.getElementById('custom_range_toggle').checked;
+                document.querySelectorAll('.filter-week-mode').forEach(function(el) {
+                    el.style.display = isCustom ? 'none' : '';
+                });
+                document.querySelectorAll('.filter-custom-mode').forEach(function(el) {
+                    el.style.display = isCustom ? '' : 'none';
+                });
+            }
+            document.getElementById('custom_range_toggle').addEventListener('change', applyMode);
+            applyMode();
+        })();
+    </script>
+
     @php
         $day_abbr = [0 => 'DO', 1 => 'LU', 2 => 'MA', 3 => 'MI', 4 => 'JU', 5 => 'VI', 6 => 'SA'];
     @endphp
@@ -53,6 +103,8 @@
         @php
             $tech = $tech_data['technician'];
             $week_count = $tech_data['week_count'];
+            $week_repair_count = $tech_data['week_repair_count'] ?? 0;
+            $week_service_count = $tech_data['week_service_count'] ?? 0;
         @endphp
         <div class="row">
             <div class="col-md-12">
@@ -63,7 +115,13 @@
                     @slot('tool')
                         <div style="font-weight: bold; color: #fff;">
                             <span class="label bg-blue" style="font-size: 14px;">
-                                {{ $week_count }} reparaciones
+                                {{ $week_repair_count }} reparaciones
+                            </span>
+                            <span class="label" style="font-size: 14px; margin-left: 4px; background-color:#9c27b0; color:#fff;">
+                                {{ $week_service_count }} servicios
+                            </span>
+                            <span class="label" style="font-size: 14px; margin-left: 4px; background-color:#0288d1; color:#fff;">
+                                {{ $week_count }} reparaciones + servicios
                             </span>
                             <span class="label bg-green" style="font-size: 14px; margin-left: 4px;">
                                 Total: <span class="display_currency" data-currency_symbol="true">{{ $tech_data['week_total'] }}</span>
@@ -155,13 +213,13 @@
                                             </tr>
                                         @endforeach
                                         <tr style="background-color: #fff9c4; font-weight: bold;">
-                                            <td colspan="5" class="text-right">SUBTOTAL {{ $day_abbr[$day_info['date']->dayOfWeek] }} ({{ $day_info['count'] }} rep.):</td>
+                                            <td colspan="5" class="text-right">SUBTOTAL {{ $day_abbr[$day_info['date']->dayOfWeek] }} ({{ $day_info['repair_count'] ?? 0 }} rep. + {{ $day_info['service_count'] ?? 0 }} serv. = {{ $day_info['count'] }}):</td>
                                             <td class="text-right"><span class="display_currency" data-currency_symbol="true">{{ $day_info['subtotal'] }}</span></td>
                                             <td colspan="{{ 8 + $extra_cols }}"></td>
                                         </tr>
                                     @endforeach
                                     <tr style="background-color: #4caf50; color: white; font-weight: bold;">
-                                        <td colspan="5" class="text-right">TOTAL SEMANA ({{ $week_count }} reparaciones):</td>
+                                        <td colspan="5" class="text-right">TOTAL SEMANA ({{ $week_repair_count }} reparaciones + {{ $week_service_count }} servicios = {{ $week_count }}):</td>
                                         <td class="text-right"><span class="display_currency" data-currency_symbol="true">{{ $tech_data['week_total'] }}</span></td>
                                         <td colspan="6"></td>
                                         <td class="text-right"><span class="display_currency" data-currency_symbol="true">{{ $tech_data['week_total'] }}</span></td>
