@@ -179,8 +179,10 @@
                             <thead>
                                 <tr>
                                     <th>{{ __('sale.product') }}</th>
+                                    <th>SKU</th>
                                     <th>{{ __('inventorymultilocation::lang.current_stock') }}</th>
                                     <th>{{ __('inventorymultilocation::lang.quantity_to_transfer') }}</th>
+                                    <th style="width:60px;" class="text-center">Quitar</th>
                                 </tr>
                             </thead>
                             <tbody></tbody>
@@ -367,6 +369,11 @@ $(document).ready(function() {
                 // Re-initialize table elements (stock indicators, currency display)
                 initInventoryTable();
 
+                // Al reemplazar el partial via AJAX se pierden los checks visuales,
+                // hay que volver a marcarlos desde selectedItems (que sobrevive porque
+                // vive en la variable JS del outer scope).
+                restoreCheckboxesFromSelection();
+
                 // Update browser URL without reloading
                 if (history.pushState) {
                     const newUrl = url + (dataString ? '?' + dataString : '');
@@ -385,29 +392,95 @@ $(document).ready(function() {
     });
 
     // Bulk Transfer functionality
-    let selectedItems = [];
+    // Persistimos la selección en sessionStorage para que sobreviva al cambio de
+    // página / recarga del filtro. Antes se guardaba solo en memoria, entonces al
+    // navegar a ?page=2 se perdía todo lo seleccionado en la página 1.
+    const SELECTED_ITEMS_KEY = 'inventory_multi_selected_items';
+    let selectedItems = loadSelectedItems();
+
+    function loadSelectedItems() {
+        try {
+            const raw = sessionStorage.getItem(SELECTED_ITEMS_KEY);
+            return raw ? JSON.parse(raw) : [];
+        } catch (e) {
+            return [];
+        }
+    }
+
+    function saveSelectedItems() {
+        try {
+            sessionStorage.setItem(SELECTED_ITEMS_KEY, JSON.stringify(selectedItems));
+        } catch (e) {
+            // Ignorar errores de quota; peor caso vuelve al comportamiento anterior.
+        }
+    }
+
+    function clearSelectedItems() {
+        selectedItems = [];
+        try { sessionStorage.removeItem(SELECTED_ITEMS_KEY); } catch (e) {}
+        updateBulkTransferButton();
+    }
+
+    // Restaurar visualmente: marca los checkboxes de la página actual cuyo
+    // (product_id, variation_id, location_id) está en la lista guardada, y
+    // también refresca el header "Select all" según lo visible.
+    function restoreCheckboxesFromSelection() {
+        $('.inventory-checkbox').each(function () {
+            const row = $(this).closest('tr');
+            const pid = String(row.data('product-id'));
+            const vid = String(row.data('variation-id'));
+            const lid = String(row.data('location-id'));
+            const isSelected = selectedItems.some(function (item) {
+                return String(item.product_id) === pid
+                    && String(item.variation_id) === vid
+                    && String(item.location_id) === lid;
+            });
+            $(this).prop('checked', isSelected);
+        });
+        const allVisible = $('.inventory-checkbox').length;
+        const checkedVisible = $('.inventory-checkbox:checked').length;
+        $('#select-all-items').prop('checked', allVisible > 0 && allVisible === checkedVisible);
+        updateBulkTransferButton();
+    }
+
+    // Ejecutar al cargar la página inicial
+    restoreCheckboxesFromSelection();
 
     $(document).on('change', '.inventory-checkbox', function() {
         const row = $(this).closest('tr');
         const productData = {
             product_id: row.data('product-id'),
             variation_id: row.data('variation-id'),
-            product_name: row.find('.product-name').text(),
-            variation_name: row.find('.variation-name').text(),
+            product_name: (row.find('.product-name').text() || '').trim(),
+            variation_name: (row.find('.variation-name').text() || '').trim(),
+            sku: (row.find('.product-sku').text() || '').trim(),
             current_stock: parseFloat(row.find('.current-stock').text()) || 0,
             location_id: row.data('location-id')
         };
 
         if ($(this).is(':checked')) {
-            selectedItems.push(productData);
+            // Dedup por (product_id, variation_id, location_id). Antes al re-buscar
+            // el mismo producto y marcar el checkbox otra vez se duplicaba la
+            // entrada en el modal.
+            const dup = selectedItems.some(function (item) {
+                return String(item.product_id) === String(productData.product_id)
+                    && String(item.variation_id) === String(productData.variation_id)
+                    && String(item.location_id) === String(productData.location_id);
+            });
+            if (!dup) {
+                selectedItems.push(productData);
+            } else if (typeof toastr !== 'undefined') {
+                toastr.info('Este producto ya está en la selección');
+            }
         } else {
             selectedItems = selectedItems.filter(item =>
-                !(item.product_id === productData.product_id &&
-                  item.variation_id === productData.variation_id &&
-                  item.location_id === productData.location_id)
+                !(String(item.product_id) === String(productData.product_id) &&
+                  String(item.variation_id) === String(productData.variation_id) &&
+                  String(item.location_id) === String(productData.location_id))
             );
         }
 
+        saveSelectedItems();
         updateBulkTransferButton();
     });
 
@@ -422,36 +495,87 @@ $(document).ready(function() {
         }
     }
 
-    $('#btn-bulk-transfer').on('click', function() {
-        if (selectedItems.length === 0) {
-            toastr.warning('{{ __('messages.select_items') }}');
-            return;
-        }
+    // Helper para escapar HTML en valores que vienen de datos (nombres de producto,
+    // SKUs, etc.) y evitar XSS accidental si algún nombre tiene < o >.
+    function escapeHtml(str) {
+        return String(str == null ? '' : str)
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
 
-        // Populate bulk transfer table
+    // Render de la tabla del modal a partir del estado actual de selectedItems.
+    // Se llama al abrir el modal y cada vez que el usuario quita algún renglón
+    // con el botón basura, para que los índices y los inputs queden consistentes.
+    function renderBulkTransferTable() {
         const tbody = $('#bulk-transfer-table tbody');
         tbody.empty();
-
-        selectedItems.forEach(function(item, index) {
+        selectedItems.forEach(function (item, index) {
+            const name = escapeHtml(item.product_name)
+                + (item.variation_name ? ' - ' + escapeHtml(item.variation_name) : '');
+            const sku = escapeHtml(item.sku || '');
             const row = `
-                <tr>
+                <tr data-item-index="${index}">
                     <td>
-                        ${item.product_name}${item.variation_name ? ' - ' + item.variation_name : ''}
-                        <input type="hidden" name="items[${index}][product_id]" value="${item.product_id}">
-                        <input type="hidden" name="items[${index}][variation_id]" value="${item.variation_id}">
-                        <input type="hidden" name="items[${index}][from_location_id]" value="${item.location_id}">
+                        ${name}
+                        <input type="hidden" name="items[${index}][product_id]" value="${escapeHtml(item.product_id)}">
+                        <input type="hidden" name="items[${index}][variation_id]" value="${escapeHtml(item.variation_id)}">
+                        <input type="hidden" name="items[${index}][from_location_id]" value="${escapeHtml(item.location_id)}">
                     </td>
+                    <td><code>${sku || 'N/A'}</code></td>
                     <td>${item.current_stock}</td>
                     <td>
                         <input type="number" name="items[${index}][quantity]" class="form-control"
                                min="0.01" max="${item.current_stock}" step="0.01" required>
                     </td>
+                    <td class="text-center">
+                        <button type="button" class="btn btn-danger btn-sm remove-bulk-item"
+                                data-item-index="${index}" title="Quitar de la selección">
+                            <i class="fa fa-trash"></i>
+                        </button>
+                    </td>
                 </tr>
             `;
             tbody.append(row);
         });
+    }
 
+    $('#btn-bulk-transfer').on('click', function() {
+        if (selectedItems.length === 0) {
+            toastr.warning('{{ __('messages.select_items') }}');
+            return;
+        }
+        renderBulkTransferTable();
         $('#bulk-transfer-modal').modal('show');
+    });
+
+    // Quitar un renglón desde el modal (icono basura). Elimina del selectedItems,
+    // guarda en sessionStorage, desmarca el checkbox correspondiente si está visible
+    // en la página, y re-renderiza la tabla para que los índices se re-numeren.
+    $(document).on('click', '.remove-bulk-item', function () {
+        const index = parseInt($(this).data('item-index'), 10);
+        if (isNaN(index) || !selectedItems[index]) return;
+        const item = selectedItems[index];
+        selectedItems.splice(index, 1);
+        saveSelectedItems();
+
+        // Desmarcar el checkbox del producto si está en la página actual
+        $('.inventory-checkbox').each(function () {
+            const row = $(this).closest('tr');
+            if (String(row.data('product-id')) === String(item.product_id)
+                && String(row.data('variation-id')) === String(item.variation_id)
+                && String(row.data('location-id')) === String(item.location_id)) {
+                $(this).prop('checked', false);
+                $('#select-all-items').prop('checked', false);
+            }
+        });
+
+        updateBulkTransferButton();
+
+        if (selectedItems.length === 0) {
+            $('#bulk-transfer-modal').modal('hide');
+        } else {
+            renderBulkTransferTable();
+        }
     });
 
     $('#btn-confirm-bulk-transfer').on('click', function() {
@@ -464,9 +588,9 @@ $(document).ready(function() {
                 if (response.success) {
                     toastr.success(response.message);
                     $('#bulk-transfer-modal').modal('hide');
+                    // Limpiar selección persistida (BD ya reflejó el movimiento).
+                    clearSelectedItems();
                     $('#inventory-filters').submit(); // Refresh table
-                    selectedItems = [];
-                    updateBulkTransferButton();
                 } else {
                     toastr.error(response.message);
                 }

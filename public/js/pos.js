@@ -811,6 +811,41 @@ $(document).ready(function() {
                 return false;
             }
 
+            // Desglose de billetes obligatorio: cada renglón de pago con método=cash y
+            // monto > 0 debe tener denomination_breakdown lleno. También aplica al
+            // flujo multi-pago, donde la cajera puede tipear el monto en la fila y
+            // olvidar abrir el modal MXN/USD. Antes el backend catcheaba pero al
+            // hacer click en Guardar; ahora el toast sale antes.
+            var missing_denom = false;
+            $('#payment_rows_div .open-denominations-popup').css('border', ''); // reset visual
+            $('#payment_rows_div .payment_row').each(function () {
+                var $row = $(this);
+                var method = $row.find('.payment_types_dropdown').val();
+                var amount = __read_number($row.find('.payment-amount').first());
+                if (method === 'cash' && amount > 0) {
+                    var bd = ($row.find('.denomination_breakdown_input').val() || '').trim();
+                    var ok = false;
+                    if (bd) {
+                        try {
+                            var parsed = JSON.parse(bd);
+                            ok = parsed && (Object.keys(parsed).length > 0);
+                        } catch (e) { ok = false; }
+                    }
+                    if (!ok) {
+                        var $btn = $row.find('.open-denominations-popup');
+                        if ($btn.length) {
+                            $btn.css('border', '2px solid #d9534f').focus();
+                        }
+                        missing_denom = true;
+                        return false; // corta el .each
+                    }
+                }
+            });
+            if (missing_denom) {
+                toastr.error('Falta el desglose de billetes en el pago en efectivo. Click en el botón "MXN/USD" del renglón y captura las denominaciones.');
+                return false;
+            }
+
             // var total_payble = __read_number($('input#final_total_input'));
             // var total_paying = __read_number($('input#total_paying_input'));
             var cnf = true;

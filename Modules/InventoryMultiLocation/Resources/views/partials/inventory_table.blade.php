@@ -40,7 +40,7 @@
                         @endif
                     </td>
                     <td>
-                        <code>{{ $item->sku ?: $item->sub_sku }}</code>
+                        <code class="product-sku">{{ $item->sku ?: $item->sub_sku }}</code>
                     </td>
                     @if(request()->get('location_id') == 'all')
                         <td>

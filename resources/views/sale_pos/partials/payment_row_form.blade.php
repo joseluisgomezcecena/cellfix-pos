@@ -24,7 +24,22 @@
 					</button>
 				</span>
 			</div>
-			<input type="hidden" name="payment[{{ $row_index }}][denomination_breakdown]" class="denomination_breakdown_input" value="">
+			@php
+				// Al editar una venta existente, precargar el desglose de billetes que
+				// la cajera capturó originalmente. Sin esto el admin veía el modal
+				// MXN/USD en blanco al querer corregir una denominación y tenía que
+				// re-capturar todo desde cero. denomination_breakdown puede venir como
+				// array (accessor) o como string JSON (raw DB), aceptamos ambos.
+				$_denom_bd = $payment_line['denomination_breakdown'] ?? null;
+				if (is_array($_denom_bd)) {
+					$_denom_bd_value = json_encode($_denom_bd);
+				} elseif (is_string($_denom_bd) && $_denom_bd !== '') {
+					$_denom_bd_value = $_denom_bd;
+				} else {
+					$_denom_bd_value = '';
+				}
+			@endphp
+			<input type="hidden" name="payment[{{ $row_index }}][denomination_breakdown]" class="denomination_breakdown_input" value="{{ $_denom_bd_value }}">
 		</div>
 	</div>
 	@if(!empty($show_date))
