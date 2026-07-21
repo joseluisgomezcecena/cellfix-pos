@@ -36,7 +36,10 @@
                                 <span class="input-group-addon">
                                     <i class="fa fa-user"></i>
                                 </span>
-                                {!! Form::select('contact_id', $customers, null, ['class' => 'form-control select2', 'placeholder' => __('layaway::lang.select_customer'), 'required', 'style' => 'width: 100%;']) !!}
+                                {{-- Cargábamos los ~40k clientes en el <option> y select2 congelaba
+                                     el navegador. Ahora el select arranca vacío y busca por AJAX
+                                     contra /contacts/customers cuando el usuario escribe. --}}
+                                {!! Form::select('contact_id', [], null, ['class' => 'form-control layaway-customer-ajax', 'placeholder' => __('layaway::lang.select_customer'), 'required', 'style' => 'width: 100%;']) !!}
                                 <span class="input-group-btn">
                                     <button type="button" class="btn btn-default bg-white btn-flat add_new_customer" data-name="" title="@lang('contact.add_new_customer')"><i class="fa fa-plus-circle text-primary fa-lg"></i></button>
                                 </span>
@@ -199,6 +202,41 @@ $(document).ready(function(){
         autoclose: true,
         format: datepicker_date_format,
         startDate: '+1d'
+    });
+
+    // Selector de cliente con AJAX. Antes el <select> traía ~40k options y
+    // congelaba el navegador ("page has become unresponsive") cuando el usuario
+    // intentaba abrir el dropdown. Ahora arranca vacío y solo busca lo que el
+    // usuario tipea, contra /contacts/customers.
+    $('.layaway-customer-ajax').select2({
+        placeholder: '{{ __("layaway::lang.select_customer") }}',
+        allowClear: true,
+        minimumInputLength: 2,
+        ajax: {
+            url: '{{ url("/contacts/customers") }}',
+            dataType: 'json',
+            delay: 300,
+            data: function (params) {
+                return { q: params.term };
+            },
+            processResults: function (data) {
+                // El endpoint regresa un array de {id, text, ...} listos para select2.
+                return { results: data };
+            },
+            cache: true,
+        },
+        minimumInputLength: 2,
+        language: {
+            inputTooShort: function () {
+                return 'Escribe al menos 2 caracteres para buscar…';
+            },
+            searching: function () {
+                return 'Buscando…';
+            },
+            noResults: function () {
+                return 'Sin resultados';
+            },
+        },
     });
 
     // Product search autocomplete (similar to POS system)

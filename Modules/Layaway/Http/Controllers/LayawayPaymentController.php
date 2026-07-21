@@ -129,10 +129,59 @@ class LayawayPaymentController extends Controller
 
         $request->validate([
             'amount' => 'required|numeric|min:0.01',
-            'payment_method' => 'required|string',
             'payment_date' => 'required|date',
-            'notes' => 'nullable|string'
+            'notes' => 'nullable|string',
+            'payments' => 'required|array|min:1',
+            'payments.*.method' => 'required|string',
+            'payments.*.amount' => 'required|numeric|min:0.01',
         ]);
+
+        $business_id_v = request()->session()->get('user.business_id');
+        $payments_in = $request->input('payments', []);
+        $total_amount = (float) $request->input('amount');
+
+        // La suma de renglones debe igualar el monto a pagar (tolerancia 0.01).
+        $rows_sum = 0.0;
+        foreach ($payments_in as $p) {
+            $rows_sum += (float) ($p['amount'] ?? 0);
+        }
+        if (abs($rows_sum - $total_amount) > 0.01) {
+            return response()->json([
+                'success' => false,
+                'message' => sprintf(
+                    'La suma de los métodos de pago (%s) no coincide con el monto a pagar (%s).',
+                    number_format($rows_sum, 2), number_format($total_amount, 2)
+                ),
+            ], 422);
+        }
+
+        // Validaciones por renglón (equivalentes a las del POS).
+        $has_terminals = \App\CardTerminal::where('business_id', $business_id_v)
+            ->where('is_active', 1)->exists();
+        foreach ($payments_in as $i => $p) {
+            $method = $p['method'] ?? null;
+            $amount = (float) ($p['amount'] ?? 0);
+            if ($method === 'card' && $has_terminals && empty($p['card_terminal_id'])) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Renglón ' . ($i + 1) . ': debes seleccionar una terminal para el pago con tarjeta.',
+                ], 422);
+            }
+            if ($method === 'cash') {
+                $bd = $p['denomination_breakdown'] ?? null;
+                $has_bd = false;
+                if (!empty($bd)) {
+                    $parsed = is_string($bd) ? json_decode($bd, true) : $bd;
+                    $has_bd = is_array($parsed) && !empty($parsed);
+                }
+                if (!$has_bd) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Renglón ' . ($i + 1) . ': debes capturar el desglose de billetes en efectivo.',
+                    ], 422);
+                }
+            }
+        }
 
         try {
             DB::beginTransaction();
@@ -152,34 +201,85 @@ class LayawayPaymentController extends Controller
                 throw new \Exception('Payment amount exceeds balance due.');
             }
 
-            // Generate reference number for layaway payment
-            $ref_count = $this->transactionUtil->setAndGetReferenceCount('payment', $business_id);
-            $payment_ref_no = $this->transactionUtil->generateReferenceNumber('payment', $ref_count, $business_id);
+            // Multi-pago: creamos un TransactionPayment + un LayawayPayment por cada
+            // renglón. El "primer" LayawayPayment se guarda como referencia principal
+            // para el recibo (payment_id que se regresa al JS).
+            $first_layaway_payment = null;
+            foreach ($payments_in as $p) {
+                $method = $p['method'];
+                $row_amount = (float) $p['amount'];
 
-            // Create transaction payment first
-            $transaction_payment = \App\TransactionPayment::create([
-                'transaction_id' => $layaway->transaction->id,
-                'business_id' => $business_id,
-                'is_return' => 0,
-                'amount' => $request->amount,
-                'method' => $request->payment_method,
-                'payment_ref_no' => $payment_ref_no,
-                'paid_on' => $request->payment_date,
-                'created_by' => $user_id,
-                'payment_for' => $layaway->contact_id,
-                'note' => 'Layaway payment - ' . $layaway->layaway_number . ($request->notes ? ' - ' . $request->notes : '')
-            ]);
+                $ref_count = $this->transactionUtil->setAndGetReferenceCount('payment', $business_id);
+                $payment_ref_no = $this->transactionUtil->generateReferenceNumber('payment', $ref_count, $business_id);
 
-            $payment = LayawayPayment::create([
-                'layaway_id' => $layaway->id,
-                'amount' => $request->amount,
-                'payment_method' => $request->payment_method,
-                'payment_date' => $request->payment_date,
-                'processed_by' => $user_id,
-                'cash_register_id' => $request->cash_register_id,
-                'transaction_payment_id' => $transaction_payment->id,
-                'notes' => $request->notes
-            ]);
+                $payment_data = [
+                    'transaction_id' => $layaway->transaction->id,
+                    'business_id' => $business_id,
+                    'is_return' => 0,
+                    'amount' => $row_amount,
+                    'method' => $method,
+                    'payment_ref_no' => $payment_ref_no,
+                    'paid_on' => $request->payment_date,
+                    'created_by' => $user_id,
+                    'payment_for' => $layaway->contact_id,
+                    'note' => 'Layaway payment - ' . $layaway->layaway_number . ($request->notes ? ' - ' . $request->notes : ''),
+                ];
+                if ($method === 'card') {
+                    $payment_data['card_type'] = $p['card_type'] ?? null;
+                    $payment_data['card_terminal_id'] = $p['card_terminal_id'] ?? null;
+                    $payment_data['card_number'] = $p['card_number'] ?? null;
+                    $payment_data['card_holder_name'] = $p['card_holder_name'] ?? null;
+                } elseif ($method === 'cheque') {
+                    $payment_data['cheque_number'] = $p['cheque_number'] ?? null;
+                    $payment_data['bank_account_number'] = $p['bank_account_number'] ?? null;
+                } elseif ($method === 'bank_transfer') {
+                    $payment_data['bank_account_number'] = $p['bank_account_number'] ?? null;
+                } elseif ($method === 'other') {
+                    $payment_data['transaction_no'] = $p['transaction_no'] ?? null;
+                } elseif ($method === 'cash') {
+                    $bd = $p['denomination_breakdown'] ?? null;
+                    if (!empty($bd)) {
+                        $payment_data['denomination_breakdown'] = is_string($bd) ? $bd : json_encode($bd);
+                    }
+                }
+
+                $transaction_payment = \App\TransactionPayment::create($payment_data);
+
+                // Cambio dado en efectivo: solo aplica al renglón cash cuando la
+                // cajera capturó más billetes que el monto del renglón.
+                if ($method === 'cash') {
+                    $change_return_amount = (float) ($p['change_return_amount'] ?? 0);
+                    if ($change_return_amount > 0.01) {
+                        \App\TransactionPayment::create([
+                            'transaction_id' => $layaway->transaction->id,
+                            'business_id' => $business_id,
+                            'is_return' => 1,
+                            'amount' => $change_return_amount,
+                            'method' => 'cash',
+                            'payment_ref_no' => $payment_ref_no . '-CR',
+                            'paid_on' => $request->payment_date,
+                            'created_by' => $user_id,
+                            'payment_for' => $layaway->contact_id,
+                            'note' => 'Cambio dado en efectivo — layaway ' . $layaway->layaway_number,
+                        ]);
+                    }
+                }
+
+                $lp = LayawayPayment::create([
+                    'layaway_id' => $layaway->id,
+                    'amount' => $row_amount,
+                    'payment_method' => $method,
+                    'payment_date' => $request->payment_date,
+                    'processed_by' => $user_id,
+                    'cash_register_id' => $request->cash_register_id,
+                    'transaction_payment_id' => $transaction_payment->id,
+                    'notes' => $request->notes,
+                ]);
+                if ($first_layaway_payment === null) {
+                    $first_layaway_payment = $lp;
+                }
+            }
+            $payment = $first_layaway_payment;
 
             // Update balance and status
             $layaway->updateBalance();
@@ -211,7 +311,8 @@ class LayawayPaymentController extends Controller
 
             $output = [
                 'success' => true,
-                'msg' => __('layaway::lang.payment_added_successfully')
+                'msg' => __('layaway::lang.payment_added_successfully'),
+                'payment_id' => $payment->id,
             ];
         } catch (\Exception $e) {
             DB::rollBack();

@@ -231,7 +231,9 @@ class LayawayController extends Controller
 
         $business_id = request()->session()->get('user.business_id');
         $business_locations = BusinessLocation::forDropdown($business_id);
-        $customers = Contact::customersDropdown($business_id, false);
+        // Ya no cargamos ~40k contactos aquí: el select ahora es AJAX contra
+        // /contacts/customers y arranca vacío. Antes esto congelaba el navegador.
+        $customers = [];
         $default_location = null;
 
         if (count($business_locations) == 1) {
