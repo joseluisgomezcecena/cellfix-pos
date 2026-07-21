@@ -448,13 +448,18 @@ $(document).ready(function() {
 
     $(document).on('change', '.inventory-checkbox', function() {
         const row = $(this).closest('tr');
+        // El stock viene formateado como "1,045.00" (comas de miles). parseFloat
+        // se corta en la primera coma → devuelve 1 en vez de 1045, y el modal de
+        // transferencia masiva mostraba "Stock actual: 1" causando confusión.
+        // Removemos comas antes de parsear.
+        const stockText = (row.find('.current-stock').text() || '0').replace(/,/g, '');
         const productData = {
             product_id: row.data('product-id'),
             variation_id: row.data('variation-id'),
             product_name: (row.find('.product-name').text() || '').trim(),
             variation_name: (row.find('.variation-name').text() || '').trim(),
             sku: (row.find('.product-sku').text() || '').trim(),
-            current_stock: parseFloat(row.find('.current-stock').text()) || 0,
+            current_stock: parseFloat(stockText) || 0,
             location_id: row.data('location-id')
         };
 
