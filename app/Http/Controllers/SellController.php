@@ -456,6 +456,36 @@ class SellController extends Controller
             $row->last_edited_at = $info['last'];
         }
 
+        // Garantías: cargamos los warranty_claims de las 25 filas visibles en UNA sola
+        // query. Guardo como array agrupado por original_sell_transaction_id porque
+        // pueden existir varias garantías sobre la misma venta (aunque es raro).
+        // Guard: si la tabla aún no existe en esta base, saltamos silenciosamente
+        // para no romper el listado (ej: dev apuntando a la base forense sin migrar).
+        $warranty_map = [];
+        if (!empty($tx_ids_for_edits) && \Schema::hasTable('warranty_claims')) {
+            $wc_rows = \DB::table('warranty_claims')
+                ->whereIn('original_sell_transaction_id', $tx_ids_for_edits)
+                ->where('status', 'completed')
+                ->select(
+                    'original_sell_transaction_id',
+                    'ref_no',
+                    'claim_type',
+                    'refund_amount',
+                    'refund_method',
+                    'replacement_product_name',
+                    'price_difference',
+                    'price_difference_method'
+                )
+                ->orderBy('id')
+                ->get();
+            foreach ($wc_rows as $wc) {
+                $warranty_map[$wc->original_sell_transaction_id][] = $wc;
+            }
+        }
+        foreach ($data as $row) {
+            $row->warranty_claims = $warranty_map[$row->id] ?? [];
+        }
+
         // Formatear datos para DataTables
         $payment_types = $this->transactionUtil->payment_types(null, true, $business_id);
         $shipping_statuses = $this->transactionUtil->shipping_statuses();
@@ -527,6 +557,47 @@ class SellController extends Controller
                     . '</div>';
             }
 
+            // Garantías: renderiza una tarjeta compacta por cada claim (tipo, monto,
+            // método o equipo de reemplazo). El listado tiene 4 tipos:
+            //   refund              → reembolso $X por método
+            //   replacement_same    → cambio 1×1 por otro equipo
+            //   replacement_higher  → cliente pagó diferencia (mayor valor)
+            //   replacement_lower   → negocio devolvió diferencia (menor valor)
+            $warranty_html = '';
+            if (!empty($row->warranty_claims)) {
+                $method_labels = [
+                    'cash' => 'Efectivo', 'card' => 'Tarjeta',
+                    'bank_transfer' => 'Transferencia', 'cheque' => 'Cheque',
+                ];
+                $items = [];
+                foreach ($row->warranty_claims as $wc) {
+                    $label = ''; $color = '#2e7d32';
+                    if ($wc->claim_type === 'refund') {
+                        $method = $method_labels[$wc->refund_method] ?? ($wc->refund_method ?? '—');
+                        $label = 'Reembolso <strong>' . $this->transactionUtil->num_f((float)$wc->refund_amount, true) . '</strong> · ' . $method;
+                        $color = '#c62828';
+                    } elseif ($wc->claim_type === 'replacement_same') {
+                        $label = 'Cambio por <strong>' . e($wc->replacement_product_name ?? '—') . '</strong>';
+                        $color = '#1565c0';
+                    } elseif ($wc->claim_type === 'replacement_higher') {
+                        $method = $method_labels[$wc->price_difference_method] ?? ($wc->price_difference_method ?? '—');
+                        $label = 'Cambio por <strong>' . e($wc->replacement_product_name ?? '—') . '</strong><br>'
+                            . '<span style="color:#2e7d32;">+ Cliente pagó ' . $this->transactionUtil->num_f((float)$wc->price_difference, true) . ' · ' . $method . '</span>';
+                        $color = '#2e7d32';
+                    } elseif ($wc->claim_type === 'replacement_lower') {
+                        $method = $method_labels[$wc->price_difference_method] ?? ($wc->price_difference_method ?? '—');
+                        $label = 'Cambio por <strong>' . e($wc->replacement_product_name ?? '—') . '</strong><br>'
+                            . '<span style="color:#c62828;">− Devolución ' . $this->transactionUtil->num_f(abs((float)$wc->price_difference), true) . ' · ' . $method . '</span>';
+                        $color = '#c62828';
+                    }
+                    $items[] = '<div style="border-left:3px solid ' . $color . '; padding-left:6px; margin-bottom:4px;">'
+                        . '<div style="font-size:10px; color:#666;">' . e($wc->ref_no) . '</div>'
+                        . '<div>' . $label . '</div>'
+                        . '</div>';
+                }
+                $warranty_html = '<div style="text-align:left; font-size:11px; line-height:1.3;">' . implode('', $items) . '</div>';
+            }
+
             // Formatear shipping_status
             $shipping_status_html = '';
             if (!empty($row->shipping_status)) {
@@ -587,6 +658,7 @@ class SellController extends Controller
                 'total_remaining' => '<span class="payment_due" data-orig-value="' . $total_remaining . '">' . 
                     $this->transactionUtil->num_f($total_remaining, true) . '</span>',
                 'return_due' => $return_due_html,
+                'warranty' => $warranty_html,
                 'shipping_status' => $shipping_status_html,
                 'total_items' => $this->transactionUtil->num_f($row->total_items ?? 0),
                 'types_of_service_name' => '<span class="service-type-label">' . (property_exists($row, 'types_of_service_name') ? $row->types_of_service_name : '') . '</span>',

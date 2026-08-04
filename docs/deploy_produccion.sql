@@ -307,6 +307,58 @@ DEALLOCATE PREPARE st;
 -- futuro activity_log crece mucho más y se nota lentitud, se puede agregar:
 --   ALTER TABLE activity_log ADD INDEX activity_log_subject_lookup (subject_type, subject_id)
 
+-- ============ GARANTÍAS (Warranty Claims) ============
+-- Módulo nuevo para reclamos de garantía de equipos.
+-- Escenarios: reembolso ($ como gasto), cambio mismo equipo, cambio mayor
+-- (cliente paga diferencia), cambio menor (negocio devuelve diferencia).
+-- El equipo devuelto NO se reingresa al inventario aquí — se reingresa manual
+-- después de inspección. Solo se reduce el stock del reemplazo.
+
+CREATE TABLE IF NOT EXISTS `warranty_claims` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `business_id` int unsigned NOT NULL,
+  `location_id` int unsigned NOT NULL,
+  `ref_no` varchar(191) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `claim_date` datetime NOT NULL,
+  `created_by` int unsigned NOT NULL,
+  `contact_id` int unsigned DEFAULT NULL,
+  `original_sell_transaction_id` int unsigned DEFAULT NULL,
+  `original_variation_id` int unsigned DEFAULT NULL,
+  `original_product_name` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `claim_type` enum('refund','replacement_same','replacement_higher','replacement_lower') COLLATE utf8mb4_unicode_ci NOT NULL,
+  `motivo` text COLLATE utf8mb4_unicode_ci NOT NULL,
+  `replacement_variation_id` int unsigned DEFAULT NULL,
+  `replacement_product_name` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `refund_amount` decimal(22,4) DEFAULT NULL,
+  `refund_method` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `refund_card_terminal_id` int unsigned DEFAULT NULL,
+  `refund_denomination_breakdown` json DEFAULT NULL,
+  `price_difference` decimal(22,4) DEFAULT NULL,
+  `price_difference_method` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `price_difference_card_terminal_id` int unsigned DEFAULT NULL,
+  `price_difference_denomination_breakdown` json DEFAULT NULL,
+  `expense_transaction_id` int unsigned DEFAULT NULL,
+  `payment_transaction_id` int unsigned DEFAULT NULL,
+  `status` enum('completed','cancelled') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'completed',
+  `created_at` timestamp NULL DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `warranty_claims_business_id_index` (`business_id`),
+  KEY `warranty_claims_location_id_index` (`location_id`),
+  KEY `warranty_claims_contact_id_index` (`contact_id`),
+  KEY `warranty_claims_original_sell_transaction_id_index` (`original_sell_transaction_id`),
+  KEY `warranty_claims_claim_date_index` (`claim_date`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Columna is_warranty_exchange en transactions: marca las ventas que son
+-- diferencias por garantía (mayor valor) para excluirlas de comisiones y de
+-- "equipos vendidos" en reportes.
+SET @c := (SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'transactions' AND column_name = 'is_warranty_exchange');
+SET @s := IF(@c = 0, 'ALTER TABLE `transactions` ADD COLUMN `is_warranty_exchange` TINYINT(1) NOT NULL DEFAULT 0 AFTER `type`', 'DO 1');
+PREPARE st FROM @s;
+EXECUTE st;
+DEALLOCATE PREPARE st;
+
 -- ============ LIMPIEZA DE DATOS (marcas con formula de Excel) ============
 DELETE FROM `brands`
  WHERE `name` LIKE '=%'

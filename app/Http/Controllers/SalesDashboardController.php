@@ -104,14 +104,26 @@ class SalesDashboardController extends Controller
             ->leftJoin('layaways as sd_l', 'sd_l.id', '=', 't.layaway_id')
             ->where('t.business_id', $business_id)
             ->where('t.type', 'sell')->where('t.status', 'final')
+            ->where('t.is_warranty_exchange', 0)
             ->where(function ($q) use ($start_dt, $end_dt) {
+                // Regla A: venta normal (sin layaway, sin repair) → transaction_date
                 $q->where(function ($q2) use ($start_dt, $end_dt) {
                     $q2->whereNull('t.layaway_id')
+                        ->whereNull('t.repair_status')
                         ->whereBetween('t.transaction_date', [$start_dt, $end_dt]);
+                // Regla B: apartado completado → completed_at
                 })->orWhere(function ($q2) use ($start_dt, $end_dt) {
                     $q2->whereNotNull('t.layaway_id')
                         ->whereNotNull('sd_l.completed_at')
                         ->whereBetween('sd_l.completed_at', [$start_dt, $end_dt]);
+                // Regla C: reparación entregada → COALESCE(repair_delivered_at, transaction_date)
+                })->orWhere(function ($q2) use ($start_dt, $end_dt) {
+                    $q2->whereNotNull('t.repair_status')
+                        ->where('t.repair_status', '!=', 'pending')
+                        ->whereBetween(
+                            DB::raw('COALESCE(t.repair_delivered_at, t.transaction_date)'),
+                            [$start_dt, $end_dt]
+                        );
                 });
             })
             ->where('p.brand_id', $brand_equipos);
@@ -120,10 +132,16 @@ class SalesDashboardController extends Controller
         }
         $equipos_lines = $eq->select([
             't.id as tx_id',
-            // Para apartados usamos completed_at como "fecha de la venta" para que caiga en
-            // la columna del día correcto en el dashboard semanal.
-            DB::raw('IF(t.layaway_id IS NOT NULL, sd_l.completed_at, t.transaction_date) as transaction_date'),
-            // Vendedor efectivo: liquidador para apartados, creador para ventas normales
+            // Fecha efectiva para agrupar por día en el dashboard:
+            //   - apartado → completed_at (día en que se liquidó)
+            //   - reparación → repair_delivered_at (día de entrega), fallback transaction_date
+            //   - venta normal → transaction_date
+            DB::raw('CASE
+                WHEN t.layaway_id IS NOT NULL THEN sd_l.completed_at
+                WHEN t.repair_status IS NOT NULL AND t.repair_status != "pending" THEN COALESCE(t.repair_delivered_at, t.transaction_date)
+                ELSE t.transaction_date
+            END as transaction_date'),
+            // Vendedor efectivo: liquidador para apartados, creador (receptor) para reparaciones y ventas normales
             DB::raw("IF(t.layaway_id IS NOT NULL, (SELECT lp.processed_by FROM layaway_payments lp WHERE lp.layaway_id = t.layaway_id ORDER BY lp.id DESC LIMIT 1), t.created_by) as created_by"),
             't.invoice_no',
             'tsl.quantity', DB::raw('(tsl.quantity * tsl.unit_price_inc_tax) as amount'),
@@ -183,14 +201,26 @@ class SalesDashboardController extends Controller
             ->leftJoin('layaways as sd_l2', 'sd_l2.id', '=', 't.layaway_id')
             ->where('t.business_id', $business_id)
             ->where('t.type', 'sell')->where('t.status', 'final')
+            ->where('t.is_warranty_exchange', 0)
             ->where(function ($q) use ($start_dt, $end_dt) {
+                // A: venta normal
                 $q->where(function ($q2) use ($start_dt, $end_dt) {
                     $q2->whereNull('t.layaway_id')
+                        ->whereNull('t.repair_status')
                         ->whereBetween('t.transaction_date', [$start_dt, $end_dt]);
+                // B: apartado completado
                 })->orWhere(function ($q2) use ($start_dt, $end_dt) {
                     $q2->whereNotNull('t.layaway_id')
                         ->whereNotNull('sd_l2.completed_at')
                         ->whereBetween('sd_l2.completed_at', [$start_dt, $end_dt]);
+                // C: reparación entregada
+                })->orWhere(function ($q2) use ($start_dt, $end_dt) {
+                    $q2->whereNotNull('t.repair_status')
+                        ->where('t.repair_status', '!=', 'pending')
+                        ->whereBetween(
+                            DB::raw('COALESCE(t.repair_delivered_at, t.transaction_date)'),
+                            [$start_dt, $end_dt]
+                        );
                 });
             });
         if (! empty($location_id)) {

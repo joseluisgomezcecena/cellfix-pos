@@ -386,6 +386,13 @@ Route::middleware(['setData', 'auth', 'SetSessionData', 'language', 'timezone', 
     Route::get('/sell-return/print/{id}', [SellReturnController::class, 'printInvoice']);
     Route::get('/sell-return/add/{id}', [SellReturnController::class, 'add']);
 
+    // Garantías (Warranty Claims)
+    Route::get('warranty-claims/get-sell-products', [\App\Http\Controllers\WarrantyClaimController::class, 'getSellProducts'])->name('warranty-claims.get-sell-products');
+    Route::get('warranty-claims/search-product', [\App\Http\Controllers\WarrantyClaimController::class, 'searchReplacementProduct'])->name('warranty-claims.search-product');
+    Route::get('warranty-claims/print/{id}', [\App\Http\Controllers\WarrantyClaimController::class, 'printTicket'])->name('warranty-claims.print');
+    Route::post('warranty-claims/{id}/cancel', [\App\Http\Controllers\WarrantyClaimController::class, 'cancel'])->name('warranty-claims.cancel');
+    Route::resource('warranty-claims', \App\Http\Controllers\WarrantyClaimController::class)->except(['edit', 'update']);
+
     //Backup
     Route::get('backup/download/{file_name}', [BackUpController::class, 'download']);
     Route::get('backup/{id}/delete', [BackUpController::class, 'delete'])->name('delete_backup');

@@ -422,6 +422,28 @@ class AdminSidebarMenu
                 )->order(30);
             }
 
+            // Garantías (Warranty Claims) — activo para todos los usuarios con permiso
+            // de crear ventas (vendedores + gerentes + admin). Los reembolsos generan
+            // gasto en el corte; los cambios de equipo NO cuentan como venta ni comisión.
+            if ($is_admin || auth()->user()->can('sell.create') || auth()->user()->can('direct_sell.access')) {
+                $menu->dropdown(
+                    'Garantías',
+                    function ($sub) {
+                        $sub->url(
+                            url('/warranty-claims'),
+                            'Historial de garantías',
+                            ['icon' => '', 'active' => request()->segment(1) == 'warranty-claims' && request()->segment(2) == null]
+                        );
+                        $sub->url(
+                            url('/warranty-claims/create'),
+                            'Nueva garantía',
+                            ['icon' => '', 'active' => request()->segment(1) == 'warranty-claims' && request()->segment(2) == 'create']
+                        );
+                    },
+                    ['icon' => '<svg aria-hidden="true" class="tw-size-5 tw-shrink-0" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"></path><path d="M12 3l8 4v6c0 4.5 -3 8 -8 9c-5 -1 -8 -4.5 -8 -9v-6l8 -4"></path><path d="M9 12l2 2l4 -4"></path></svg>']
+                )->order(31);
+            }
+
             //Cortes Diarios dropdown
             if (auth()->user()->can('business_settings.access') || auth()->user()->can('view_purchase_n_sell_report')) {
                 $menu->dropdown(

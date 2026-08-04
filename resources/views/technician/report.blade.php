@@ -126,9 +126,27 @@
                             <span class="label bg-green" style="font-size: 14px; margin-left: 4px;">
                                 Total: <span class="display_currency" data-currency_symbol="true">{{ $tech_data['week_total'] }}</span>
                             </span>
-                            @if($tech_data['commission_due'] > 0)
+                            @php
+                                $penalty = $tech_data['warranty_penalty'] ?? 0;
+                                $penalty_count = $tech_data['warranty_penalty_count'] ?? 0;
+                                $gross = $tech_data['commission_gross'] ?? $tech_data['commission_due'];
+                                $due = $tech_data['commission_due'];
+                            @endphp
+                            @if($gross > 0 || $penalty > 0)
                                 <span class="label bg-yellow" style="font-size: 14px; margin-left: 4px;">
-                                    Comisión: <span class="display_currency" data-currency_symbol="true">{{ $tech_data['commission_due'] }}</span>
+                                    Comisión bruta: <span class="display_currency" data-currency_symbol="true">{{ $gross }}</span>
+                                </span>
+                            @endif
+                            @if($penalty > 0)
+                                <span class="label" style="font-size: 14px; margin-left: 4px; background-color:#c62828; color:#fff;"
+                                      title="{{ $penalty_count }} garantía(s) cobrada(s) esta semana sobre reparaciones históricas">
+                                    − Garantías: <span class="display_currency" data-currency_symbol="true">{{ $penalty }}</span>
+                                    ({{ $penalty_count }})
+                                </span>
+                            @endif
+                            @if($gross > 0 || $penalty > 0)
+                                <span class="label" style="font-size: 14px; margin-left: 4px; background-color:{{ $due >= 0 ? '#2e7d32' : '#c62828' }}; color:#fff; font-weight:700;">
+                                    Comisión neta: <span class="display_currency" data-currency_symbol="true">{{ $due }}</span>
                                 </span>
                             @endif
                         </div>
@@ -225,9 +243,21 @@
                                         <td class="text-right"><span class="display_currency" data-currency_symbol="true">{{ $tech_data['week_total'] }}</span></td>
                                         <td colspan="2"></td>
                                         @if($show_commission)
-                                            <td class="text-right">{{ number_format($tech_data['commission_due'], 2) }}</td>
+                                            <td class="text-right">{{ number_format($tech_data['commission_gross'] ?? $tech_data['commission_due'], 2) }}</td>
                                         @endif
                                     </tr>
+                                    @if($show_commission && ($tech_data['warranty_penalty'] ?? 0) > 0)
+                                        <tr style="background-color: #ffcdd2; color: #c62828; font-weight: bold;">
+                                            <td colspan="{{ 13 + $extra_cols }}" class="text-right">
+                                                − Penalización por {{ $tech_data['warranty_penalty_count'] }} garantía(s) cobradas esta semana:
+                                            </td>
+                                            <td class="text-right">−{{ number_format($tech_data['warranty_penalty'], 2) }}</td>
+                                        </tr>
+                                        <tr style="background-color: {{ ($tech_data['commission_due'] >= 0) ? '#2e7d32' : '#c62828' }}; color: white; font-weight: bold; font-size: 13px;">
+                                            <td colspan="{{ 13 + $extra_cols }}" class="text-right">COMISIÓN NETA A PAGAR:</td>
+                                            <td class="text-right">{{ number_format($tech_data['commission_due'], 2) }}</td>
+                                        </tr>
+                                    @endif
                                 </tbody>
                             </table>
                         </div>

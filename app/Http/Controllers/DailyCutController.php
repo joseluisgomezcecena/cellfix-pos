@@ -70,17 +70,48 @@ class DailyCutController extends Controller
             ->with('location', 'generatedBy')
             ->findOrFail($id);
 
+        // Regenerar el cut antes de mostrarlo para que refleje las reglas actuales
+        // (F: reparaciones pendientes excluidas, entregadas atribuidas al día de
+        // entrega). Sin esto, cuts guardados con lógica vieja mostrarían totales
+        // inflados por reparaciones pendientes.
+        $this->util->upsert($business_id, $cut->location_id, $cut->cut_date->toDateString(), auth()->id());
+        $cut = DailyCut::where('business_id', $business_id)
+            ->with('location', 'generatedBy')
+            ->findOrFail($id);
+
         // Lista de todas las ventas del día/sucursal del cut, con cliente y monto.
-        // Usa la MISMA lógica que /sells (final_total directo) para que cuadre exacto.
+        // Aplica las mismas reglas del DailyCutUtil:
+        //   A) venta normal (sin layaway, sin repair) → transaction_date
+        //   B) apartado completado → layaways.completed_at
+        //   C) reparación entregada → COALESCE(repair_delivered_at, transaction_date)
+        // Excluye reparaciones pendientes y apartados activos.
         $cut_date = $cut->cut_date->toDateString();
         $sales = \DB::table('transactions as t')
             ->leftJoin('contacts as c', 'c.id', '=', 't.contact_id')
             ->leftJoin('users as u', 'u.id', '=', 't.created_by')
+            ->leftJoin('layaways as dcs_l', 'dcs_l.id', '=', 't.layaway_id')
             ->where('t.business_id', $business_id)
             ->where('t.location_id', $cut->location_id)
             ->where('t.type', 'sell')
             ->where('t.status', 'final')
-            ->whereRaw('DATE(t.transaction_date) = ?', [$cut_date])
+            ->where(function ($q) use ($cut_date) {
+                $q->where(function ($q2) use ($cut_date) {
+                    // A: venta normal
+                    $q2->whereNull('t.layaway_id')
+                        ->whereNull('t.repair_status')
+                        ->whereRaw('DATE(t.transaction_date) = ?', [$cut_date]);
+                })->orWhere(function ($q2) use ($cut_date) {
+                    // B: apartado completado
+                    $q2->whereNotNull('t.layaway_id')
+                        ->whereNotNull('dcs_l.completed_at')
+                        ->whereRaw('DATE(dcs_l.completed_at) = ?', [$cut_date]);
+                })->orWhere(function ($q2) use ($cut_date) {
+                    // C: reparación entregada
+                    $q2->whereNotNull('t.repair_status')
+                        ->where('t.repair_status', '!=', 'pending')
+                        ->whereRaw('DATE(COALESCE(t.repair_delivered_at, t.transaction_date)) = ?', [$cut_date]);
+                });
+            })
             ->where(function ($q) {
                 $q->where('t.sub_type', '!=', 'project_invoice')
                   ->orWhereNull('t.sub_type');
@@ -88,12 +119,18 @@ class DailyCutController extends Controller
             ->select(
                 't.id',
                 't.invoice_no',
-                't.transaction_date',
+                // Hora efectiva mostrada en la lista: para reparaciones entregadas
+                // usamos la hora de entrega (que es el evento que corresponde al cut).
+                \DB::raw('CASE
+                    WHEN t.layaway_id IS NOT NULL THEN dcs_l.completed_at
+                    WHEN t.repair_status IS NOT NULL AND t.repair_status != "pending" THEN COALESCE(t.repair_delivered_at, t.transaction_date)
+                    ELSE t.transaction_date
+                END as transaction_date'),
                 't.final_total',
                 \DB::raw("COALESCE(c.name, 'Walk-In Customer') as customer_name"),
                 \DB::raw("CONCAT(COALESCE(u.first_name,''),' ',COALESCE(u.last_name,'')) as vendedor")
             )
-            ->orderBy('t.transaction_date')
+            ->orderBy('transaction_date')
             ->get();
 
         // Métodos de pago por venta para mostrar en la lista (no es por venta = un solo método;
@@ -111,7 +148,81 @@ class DailyCutController extends Controller
             }
         }
 
-        return view('daily_cut.show', compact('cut', 'sales', 'payments_by_tx'));
+        // Lista de gastos del día para la card debajo del listado de ventas.
+        // Incluye 2 tipos de "salida de dinero":
+        //   1) transactions type=expense — gasto interno, compras, garantías (reembolsos).
+        //   2) transactions type=sell_return — devoluciones al cliente (dinero que sale
+        //      del cajón para reembolsarle una compra previa).
+        // Ambos se muestran en la misma lista ordenada por hora, con motivo,
+        // referencia a factura si aplica, vendedor que lo registró, método de pago
+        // y total.
+        $expense_tx = \DB::table('transactions as t')
+            ->leftJoin('expense_categories as ec', 'ec.id', '=', 't.expense_category_id')
+            ->leftJoin('users as u', 'u.id', '=', 't.created_by')
+            ->where('t.business_id', $business_id)
+            ->where('t.location_id', $cut->location_id)
+            ->where('t.type', 'expense')
+            ->where('t.status', 'final')
+            ->whereRaw('DATE(t.transaction_date) = ?', [$cut_date])
+            ->select(
+                't.id',
+                't.transaction_date',
+                't.ref_no as referencia',
+                't.additional_notes',
+                't.final_total',
+                \DB::raw("'expense' as origen"),
+                \DB::raw("COALESCE(ec.name, '(sin categoría)') as motivo"),
+                \DB::raw("CONCAT(COALESCE(u.first_name,''),' ',COALESCE(u.last_name,'')) as vendedor")
+            )
+            ->get();
+
+        // Devoluciones: type=sell_return. La "factura" que mostramos es la de la venta
+        // original (return_parent_id → invoice_no), porque es lo que la cajera reconoce.
+        $return_tx = \DB::table('transactions as t')
+            ->leftJoin('users as u', 'u.id', '=', 't.created_by')
+            ->leftJoin('transactions as parent', 'parent.id', '=', 't.return_parent_id')
+            ->where('t.business_id', $business_id)
+            ->where('t.location_id', $cut->location_id)
+            ->where('t.type', 'sell_return')
+            ->where('t.status', 'final')
+            ->whereRaw('DATE(t.transaction_date) = ?', [$cut_date])
+            ->select(
+                't.id',
+                't.transaction_date',
+                'parent.invoice_no as referencia',
+                't.additional_notes',
+                't.final_total',
+                \DB::raw("'return' as origen"),
+                \DB::raw("'Devolución' as motivo"),
+                \DB::raw("CONCAT(COALESCE(u.first_name,''),' ',COALESCE(u.last_name,'')) as vendedor")
+            )
+            ->get();
+
+        // Combina, ordena por hora, y numera desde 1.
+        $expenses_list = $expense_tx->concat($return_tx)
+            ->sortBy(function ($e) { return $e->transaction_date; })
+            ->values();
+
+        // Métodos de pago por transacción (misma técnica que ventas).
+        // Para expense/return, la salida de dinero es tp.is_return=0 (el pago que sale
+        // del cajón al proveedor / cliente).
+        $exp_ids = $expenses_list->pluck('id')->toArray();
+        $exp_payments_by_tx = [];
+        if (!empty($exp_ids)) {
+            $exp_payments = \DB::table('transaction_payments')
+                ->whereIn('transaction_id', $exp_ids)
+                ->where('is_return', 0)
+                ->select('transaction_id', 'method', 'amount')
+                ->get();
+            foreach ($exp_payments as $p) {
+                $exp_payments_by_tx[$p->transaction_id][] = $p->method;
+            }
+        }
+
+        return view('daily_cut.show', compact(
+            'cut', 'sales', 'payments_by_tx',
+            'expenses_list', 'exp_payments_by_tx'
+        ));
     }
 
     /**
@@ -397,12 +508,42 @@ class DailyCutController extends Controller
         $weekly_total_cash = (float) $cuts->sum('total_cash');
         $undesglosado_cash = max(0, $weekly_total_cash - $totals['total_cash']);
 
+        // Total de gastos de la semana (para la celda solitaria al pie del reporte).
+        // No se resta del TOTAL DINERO — solo se muestra como referencia informativa.
+        $weekly_total_expenses = (float) $cuts->sum('total_expenses');
+
+        // Desglose de gastos por categoría (para la lista debajo del total).
+        // Se consulta directo a transactions porque daily_cuts solo guarda el total agregado.
+        // Categorías conocidas del catálogo Celfix: GASTO INTERNO, COMPRA PROVEEDOR LOCAL,
+        // COMPRA MERCADO LIBRE, Reembolso por Garantía, y cualquiera que use el equipo.
+        // Los que no tienen expense_category_id caen en '(sin categoría)'.
+        $expenses_query = \DB::table('transactions as t')
+            ->leftJoin('expense_categories as ec', 'ec.id', '=', 't.expense_category_id')
+            ->where('t.business_id', $business_id)
+            ->where('t.type', 'expense')
+            ->where('t.status', 'final')
+            ->whereBetween('t.transaction_date', [
+                $start->toDateString() . ' 00:00:00',
+                $end->toDateString() . ' 23:59:59',
+            ]);
+        if (!empty($location_id)) {
+            $expenses_query->where('t.location_id', $location_id);
+        }
+        $weekly_expenses_by_category = $expenses_query
+            ->select(\DB::raw("COALESCE(ec.name, '(sin categoría)') as category"),
+                     \DB::raw('COUNT(*) as tx_count'),
+                     \DB::raw('SUM(t.final_total) as total'))
+            ->groupBy('category')
+            ->orderByDesc('total')
+            ->get();
+
         $locations = BusinessLocation::forDropdown($business_id);
 
         return view('daily_cut.denominations', compact(
             'rows', 'totals', 'mxn_faces', 'usd_faces', 'terminal_names',
             'start_date', 'location_id', 'locations',
-            'weekly_total_cash', 'undesglosado_cash'
+            'weekly_total_cash', 'undesglosado_cash', 'weekly_total_expenses',
+            'weekly_expenses_by_category'
         ));
     }
 

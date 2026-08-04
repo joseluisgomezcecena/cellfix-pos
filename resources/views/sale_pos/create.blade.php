@@ -145,5 +145,5 @@
     @endif
 
     {{-- Promo Code Scripts --}}
-    <script src="{{ asset('modules/PromoCode/js/promo-code-pos.js?v=' . $asset_v) }}"></script>
+    <script src="{{ asset('modules/promocode/js/promo-code-pos.js?v=' . $asset_v) }}"></script>
 @endsection

@@ -193,6 +193,45 @@
             </table>
         </div>
 
+        {{-- Celda solitaria: gastos de la semana con desglose por categoría.
+             Se muestra como referencia informativa, fuera de la tabla principal.
+             NO se resta del TOTAL DINERO. --}}
+        <div class="row" style="margin-top:20px;">
+            <div class="col-md-6 col-md-offset-3">
+                <div class="box box-solid" style="border:2px solid #d9534f; text-align:center; padding:15px; background:#fff;">
+                    <div style="font-size:11px; letter-spacing:0.14em; text-transform:uppercase; color:#6c757d; font-weight:700; margin-bottom:6px;">
+                        Gastos de la semana
+                    </div>
+                    <div style="font-family:'Courier New',monospace; font-variant-numeric:tabular-nums; font-size:28px; font-weight:800; color:#c62828; letter-spacing:-0.02em;">
+                        <span class="display_currency" data-currency_symbol="true">{{ $weekly_total_expenses ?? 0 }}</span>
+                    </div>
+
+                    @if(!empty($weekly_expenses_by_category) && count($weekly_expenses_by_category) > 0)
+                        <div style="margin-top:14px; padding-top:12px; border-top:1px solid #f0d5d5;">
+                            <div style="font-size:10px; letter-spacing:0.12em; text-transform:uppercase; color:#6c757d; font-weight:700; margin-bottom:8px;">
+                                Desglose por categoría
+                            </div>
+                            <table style="width:100%; font-size:13px;">
+                                <tbody>
+                                @foreach($weekly_expenses_by_category as $cat)
+                                    <tr>
+                                        <td style="text-align:left; padding:4px 8px; color:#333;">
+                                            {{ $cat->category }}
+                                            <span style="color:#999; font-size:11px;">({{ $cat->tx_count }})</span>
+                                        </td>
+                                        <td style="text-align:right; padding:4px 8px; font-family:'Courier New',monospace; font-variant-numeric:tabular-nums; font-weight:700; color:#c62828;">
+                                            <span class="display_currency" data-currency_symbol="true">{{ $cat->total }}</span>
+                                        </td>
+                                    </tr>
+                                @endforeach
+                                </tbody>
+                            </table>
+                        </div>
+                    @endif
+                </div>
+            </div>
+        </div>
+
         @if(($undesglosado_cash ?? 0) > 0.01)
         <div class="alert" style="background-color:#fff3cd; border:2px solid #f0ad4e; margin-top:15px; padding:15px;">
             <h4 style="margin-top:0; color:#8a6d3b;"><i class="fas fa-exclamation-triangle"></i> Aviso: hay efectivo sin desglosar</h4>

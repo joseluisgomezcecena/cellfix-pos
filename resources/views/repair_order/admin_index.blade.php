@@ -227,8 +227,31 @@ $(document).ready(function () {
                 // asumimos que la reparación se completó.
                 return '<span class="label label-success">Entregada</span>';
             }},
-            { data: 'total', render: function (d) {
-                return '$' + parseFloat(d).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            { data: 'total', render: function (d, t, row) {
+                var fmt = function (n) {
+                    return '$' + parseFloat(n).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                };
+                var html = '<div style="font-weight:700;">' + fmt(d) + '</div>';
+                // Anticipo (si hubo)
+                if (parseFloat(row.anticipo_amount || 0) > 0.001) {
+                    html += '<div style="font-size:11px; color:#2e7d32; margin-top:2px;">'
+                        + '<i class="fas fa-hand-holding-usd"></i> Anticipo: <strong>' + fmt(row.anticipo_amount) + '</strong>'
+                        + (row.anticipo_date ? ' <span style="color:#666;">(' + row.anticipo_date + ')</span>' : '')
+                        + '</div>';
+                } else {
+                    html += '<div style="font-size:11px; color:#999; margin-top:2px;">'
+                        + '<i class="far fa-circle"></i> Sin anticipo</div>';
+                }
+                // Fecha de entrega (si ya entregada)
+                if (row.delivered_at) {
+                    html += '<div style="font-size:11px; color:#1565c0; margin-top:2px;">'
+                        + '<i class="fas fa-box-open"></i> Entregada: <strong>' + row.delivered_at + '</strong>'
+                        + '</div>';
+                } else if (row.repair_status === 'pending') {
+                    html += '<div style="font-size:11px; color:#c62828; margin-top:2px;">'
+                        + '<i class="fas fa-hourglass-half"></i> Pendiente de entrega</div>';
+                }
+                return html;
             }},
             { data: null, render: function (d, t, row) {
                 return '<button type="button" class="btn btn-xs btn-primary rep-admin-change" '

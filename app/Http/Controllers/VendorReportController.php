@@ -101,22 +101,44 @@ class VendorReportController extends Controller
             ->where('t.business_id', $business_id)
             ->where('t.type', 'sell')
             ->where('t.status', 'final')
+            ->where('t.is_warranty_exchange', 0)
             ->where(function ($q) use ($start_dt, $end_dt) {
+                // A: venta normal
                 $q->where(function ($q2) use ($start_dt, $end_dt) {
                     $q2->whereNull('t.layaway_id')
+                        ->whereNull('t.repair_status')
                         ->whereBetween('t.transaction_date', [$start_dt, $end_dt]);
+                // B: apartado completado
                 })->orWhere(function ($q2) use ($start_dt, $end_dt) {
                     $q2->whereNotNull('t.layaway_id')
                         ->whereNotNull('vr_l.completed_at')
                         ->whereBetween('vr_l.completed_at', [$start_dt, $end_dt]);
+                // C: reparación entregada — el vendedor de crédito es created_by (receptor)
+                })->orWhere(function ($q2) use ($start_dt, $end_dt) {
+                    $q2->whereNotNull('t.repair_status')
+                        ->where('t.repair_status', '!=', 'pending')
+                        ->whereBetween(
+                            \DB::raw('COALESCE(t.repair_delivered_at, t.transaction_date)'),
+                            [$start_dt, $end_dt]
+                        );
                 });
             })
             ->select(
                 't.id as transaction_id',
-                // Vendedor efectivo: para apartados es quien liquidó, no quien apartó.
+                // Vendedor efectivo:
+                //   - apartados → quien liquidó (last processed_by)
+                //   - reparaciones → quien RECIBIÓ (created_by), NO quien entregó
+                //   - venta normal → created_by
                 \DB::raw("IF(t.layaway_id IS NOT NULL, (SELECT lp.processed_by FROM layaway_payments lp WHERE lp.layaway_id = t.layaway_id ORDER BY lp.id DESC LIMIT 1), t.created_by) as created_by"),
-                // Fecha efectiva: para apartados es la de liquidación (cae en el día correcto).
-                \DB::raw('IF(t.layaway_id IS NOT NULL, vr_l.completed_at, t.transaction_date) as transaction_date'),
+                // Fecha efectiva:
+                //   - apartados → completed_at
+                //   - reparaciones entregadas → repair_delivered_at (fallback transaction_date)
+                //   - venta normal → transaction_date
+                \DB::raw('CASE
+                    WHEN t.layaway_id IS NOT NULL THEN vr_l.completed_at
+                    WHEN t.repair_status IS NOT NULL AND t.repair_status != "pending" THEN COALESCE(t.repair_delivered_at, t.transaction_date)
+                    ELSE t.transaction_date
+                END as transaction_date'),
                 'p.brand_id',
                 'tsl.quantity'
             );

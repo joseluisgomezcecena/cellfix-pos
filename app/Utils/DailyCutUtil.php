@@ -20,13 +20,18 @@ class DailyCutUtil
 
         // ---- Sales transactions (final only) ----
         // Reglas:
-        //   A) Venta normal sin apartado    → cuenta por transaction_date.
-        //   B) Apartado COMPLETADO hoy      → cuenta por layaways.completed_at = hoy.
-        //                                     Cuando aparece, TODOS sus pagos acumulados se
-        //                                     suman ese día (no se distribuyen por paid_on).
-        //   C) Apartado todavía ACTIVO      → NO aparece en ningún cut. El dinero está
-        //                                     físicamente en la caja del equipo, no en
-        //                                     la caja registradora.
+        //   A) Venta normal (no layaway, no repair) → cuenta por transaction_date.
+        //   B) Apartado COMPLETADO hoy            → cuenta por layaways.completed_at = hoy.
+        //                                           Cuando aparece, TODOS sus pagos acumulados
+        //                                           se suman ese día.
+        //   C) Reparación ENTREGADA hoy           → cuenta por repair_delivered_at = hoy.
+        //                                           Igual que apartados: pagos (anticipo + saldo)
+        //                                           se atribuyen al día de la entrega.
+        //                                           Fallback: reparaciones históricas sin
+        //                                           repair_delivered_at usan transaction_date.
+        //   D) Apartado ACTIVO / Reparación PENDIENTE → NO aparecen en ningún cut. Su cash
+        //                                           físico se maneja fuera del cajón principal
+        //                                           (bolsa/caja separada), como con apartados.
         $sales = DB::table('transactions as t')
             ->leftJoin('layaways as l', 'l.id', '=', 't.layaway_id')
             ->where('t.business_id', $business_id)
@@ -34,18 +39,29 @@ class DailyCutUtil
             ->where('t.type', 'sell')
             ->where('t.status', 'final')
             ->where(function ($q) use ($start, $end) {
-                // Regla A: venta normal sin layaway_id → filtra por transaction_date
+                // Regla A: venta normal (sin layaway, sin repair_status) → transaction_date
                 $q->where(function ($q2) use ($start, $end) {
                     $q2->whereNull('t.layaway_id')
+                        ->whereNull('t.repair_status')
                         ->whereBetween('t.transaction_date', [$start, $end]);
                 })
-                // Regla B: apartado completado hoy → filtra por layaways.completed_at
+                // Regla B: apartado completado → layaways.completed_at
                 ->orWhere(function ($q2) use ($start, $end) {
                     $q2->whereNotNull('t.layaway_id')
                         ->whereNotNull('l.completed_at')
                         ->whereBetween('l.completed_at', [$start, $end]);
+                })
+                // Regla C: reparación entregada → COALESCE(repair_delivered_at, transaction_date)
+                // Excluye explícitamente 'pending'. Fallback a transaction_date para históricas.
+                ->orWhere(function ($q2) use ($start, $end) {
+                    $q2->whereNotNull('t.repair_status')
+                        ->where('t.repair_status', '!=', 'pending')
+                        ->whereBetween(
+                            DB::raw('COALESCE(t.repair_delivered_at, t.transaction_date)'),
+                            [$start, $end]
+                        );
                 });
-                // Regla C: apartado activo → automáticamente excluido (no matchea A ni B)
+                // Regla D: apartado activo / reparación pendiente → excluidas (no matchean nada)
             })
             ->select('t.id', 't.final_total', 't.total_before_tax', 't.tax_amount', 't.discount_amount')
             ->get();

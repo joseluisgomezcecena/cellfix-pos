@@ -227,7 +227,12 @@
 
             <div class="clearfix"></div>
         </div>
-        <div class="row">
+        {{-- Celfix: en el modal quick_add del POS ocultamos con CSS el botón "Más
+             información" y todos los campos extendidos (RFC, saldo, término de pago,
+             crédito, direcciones, custom fields, shipping). Los inputs siguen en el
+             DOM y se envían vacíos, pero ninguno es obligatorio en el backend.
+             El /contacts/create sigue mostrando todo como antes. --}}
+        <div class="row @if(!empty($quick_add)) hide @endif">
             <div class="col-md-12">
                 <button type="button" class="tw-dw-btn tw-dw-btn-primary tw-text-white tw-dw-btn-sm center-block more_btn" data-target="#more_div">@lang('lang_v1.more_info') <i class="fa fa-chevron-down"></i></button>
             </div>

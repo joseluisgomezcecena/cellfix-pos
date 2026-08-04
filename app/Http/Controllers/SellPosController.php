@@ -353,7 +353,14 @@ class SellPosController extends Controller
             }
 
             //Check Customer credit limit
-            $is_credit_limit_exeeded = $this->transactionUtil->isCustomerCreditLimitExeeded($input);
+            // Skip Celfix: para órdenes de reparación (repair_status=pending) el saldo
+            // pendiente es NORMAL — el cliente puede dejar $0 de anticipo y pagar todo
+            // al momento de la entrega. La reparación se cobra completo hasta que se
+            // entrega, no aplica el límite de crédito estándar.
+            $is_repair_reception = (($input['repair_status'] ?? null) === 'pending');
+            $is_credit_limit_exeeded = $is_repair_reception
+                ? false
+                : $this->transactionUtil->isCustomerCreditLimitExeeded($input);
 
             if ($is_credit_limit_exeeded !== false) {
                 $credit_limit_amount = $this->transactionUtil->num_f($is_credit_limit_exeeded, true);
@@ -443,24 +450,28 @@ class SellPosController extends Controller
                     }
                 }
 
-                // Validación Celfix: bloquear venta a Walk-In para categorías críticas.
-                // Equipos, servicios y desbloqueos requieren cliente identificado para
-                // garantía y soporte (si más adelante hay reclamo, sin cliente asignado
-                // no hay forma de rastrear a quién se le vendió/hizo el servicio).
-                // Top-level categorías: EQUIPOS=180, SERVICIOS=187, DESBLOQUEOS=275.
+                // Validación Celfix: bloquear venta a Walk-In cuando la orden incluye
+                // equipos, servicios, reparaciones o desbloqueos. Requieren cliente
+                // identificado para garantía y soporte (si más adelante hay reclamo,
+                // sin cliente asignado no hay forma de rastrear a quién se le vendió).
+                // Equipos = por categoría (EQUIPOS=180 y sus subcategorías).
+                // Reparaciones/Servicios/Desbloqueos = por MARCA, que es el criterio
+                // que usa el reporte de técnicos y como está clasificado el catálogo.
                 if (!empty($input['contact_id'])) {
                     $walk_in = $this->contactUtil->getWalkInCustomer($business_id, false);
                     if ($walk_in && (int) $input['contact_id'] === (int) $walk_in->id) {
                         $product_ids = collect($input['products'])
                             ->pluck('product_id')->filter()->unique()->values()->toArray();
                         if (!empty($product_ids)) {
-                            $critical_cat_ids = [180, 187, 275];
+                            $equipos_cat_id = 180;
+                            $critical_brand_ids = [75, 84, 85, 87, 88];
                             $critical = DB::table('products as p')
                                 ->leftJoin('categories as c', 'c.id', '=', 'p.category_id')
                                 ->whereIn('p.id', $product_ids)
-                                ->where(function ($q) use ($critical_cat_ids) {
-                                    $q->whereIn('c.id', $critical_cat_ids)
-                                        ->orWhereIn('c.parent_id', $critical_cat_ids);
+                                ->where(function ($q) use ($equipos_cat_id, $critical_brand_ids) {
+                                    $q->where('c.id', $equipos_cat_id)
+                                        ->orWhere('c.parent_id', $equipos_cat_id)
+                                        ->orWhereIn('p.brand_id', $critical_brand_ids);
                                 })
                                 ->select('p.name')
                                 ->get();
@@ -471,7 +482,7 @@ class SellPosController extends Controller
                                 }
                                 $output = [
                                     'success' => 0,
-                                    'msg' => 'No se puede vender a "Walk-In Customer" cuando la venta incluye equipos, servicios o desbloqueos. Selecciona (o registra) un cliente para: ' . $names,
+                                    'msg' => 'No se puede vender a "Walk-In Customer" cuando la venta incluye equipos, reparaciones, servicios o desbloqueos. Selecciona (o registra) un cliente para: ' . $names,
                                 ];
                                 if (!$is_direct_sale) {
                                     return $output;
@@ -1386,9 +1397,19 @@ class SellPosController extends Controller
                     $input['transaction_date'] = \Carbon::now()->toDateTimeString();
                 }
 
-                $input['commission_agent'] = !empty($request->input('commission_agent')) ? $request->input('commission_agent') : null;
-                if ($commsn_agnt_setting == 'logged_in_user') {
-                    $input['commission_agent'] = $user_id;
+                // Fix Celfix: en EDICIÓN nunca reasignamos commission_agent al usuario
+                // logueado. Motivo: solo admins/gerentes pueden editar ventas cerradas
+                // (Capa 1 quitó ese permiso a cajeros/vendedores). La comisión tiene
+                // que quedarse con el VENDEDOR ORIGINAL, no pasarse al admin/gerente que
+                // hizo la corrección. Antes, con la config `sales_cmsn_agnt=logged_in_user`,
+                // cada edición del admin robaba la comisión al vendedor. Este bloque:
+                //   - Si el form manda commission_agent explícito → se respeta.
+                //   - Si no viene → conservamos el valor previo de la transacción.
+                //   - NO aplicamos el override `logged_in_user` (solo aplica en store).
+                if ($request->filled('commission_agent')) {
+                    $input['commission_agent'] = $request->input('commission_agent');
+                } else {
+                    $input['commission_agent'] = $transaction_before->commission_agent;
                 }
 
                 if (isset($input['exchange_rate']) && $this->transactionUtil->num_uf($input['exchange_rate']) == 0) {

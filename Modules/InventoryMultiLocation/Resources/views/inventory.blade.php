@@ -529,8 +529,9 @@ $(document).ready(function() {
                     <td><code>${sku || 'N/A'}</code></td>
                     <td>${item.current_stock}</td>
                     <td>
-                        <input type="number" name="items[${index}][quantity]" class="form-control"
-                               min="0.01" max="${item.current_stock}" step="0.01" required>
+                        <input type="number" name="items[${index}][quantity]" class="form-control bulk-qty"
+                               min="0.01" max="${item.current_stock}" step="0.01"
+                               value="${item.quantity != null ? escapeHtml(String(item.quantity)) : ''}" required>
                     </td>
                     <td class="text-center">
                         <button type="button" class="btn btn-danger btn-sm remove-bulk-item"
@@ -553,12 +554,34 @@ $(document).ready(function() {
         $('#bulk-transfer-modal').modal('show');
     });
 
+    // Antes de cualquier re-render o splice, guarda lo que la cajera ya tecleó en
+    // el campo Cantidad en su item correspondiente. Sin esto, al quitar una fila
+    // se limpiaba la cantidad de TODAS las demás filas (bug reportado).
+    function snapshotBulkQuantities() {
+        $('#bulk-transfer-table tbody tr').each(function () {
+            const idx = parseInt($(this).data('item-index'), 10);
+            if (!isNaN(idx) && selectedItems[idx]) {
+                const v = $(this).find('.bulk-qty').val();
+                selectedItems[idx].quantity = (v === '' || v == null) ? null : v;
+            }
+        });
+    }
+    // Si la usuaria edita el campo, también actualizamos el item en memoria.
+    $(document).on('input', '#bulk-transfer-table .bulk-qty', function () {
+        const idx = parseInt($(this).closest('tr').data('item-index'), 10);
+        if (!isNaN(idx) && selectedItems[idx]) {
+            const v = $(this).val();
+            selectedItems[idx].quantity = (v === '' || v == null) ? null : v;
+        }
+    });
+
     // Quitar un renglón desde el modal (icono basura). Elimina del selectedItems,
     // guarda en sessionStorage, desmarca el checkbox correspondiente si está visible
     // en la página, y re-renderiza la tabla para que los índices se re-numeren.
     $(document).on('click', '.remove-bulk-item', function () {
         const index = parseInt($(this).data('item-index'), 10);
         if (isNaN(index) || !selectedItems[index]) return;
+        snapshotBulkQuantities();
         const item = selectedItems[index];
         selectedItems.splice(index, 1);
         saveSelectedItems();

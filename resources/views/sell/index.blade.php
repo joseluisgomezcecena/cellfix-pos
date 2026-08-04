@@ -85,6 +85,7 @@
                             <th>@lang('sale.total_paid')</th>
                             <th>@lang('lang_v1.sell_due')</th>
                             <th>@lang('lang_v1.sell_return_due')</th>
+                            <th>Garantías</th>
                             <th>@lang('lang_v1.shipping_status')</th>
                             <th>@lang('lang_v1.total_items')</th>
                             <th>@lang('lang_v1.types_of_service')</th>
@@ -112,6 +113,7 @@
                             <td class="footer_total_paid"></td>
                             <td class="footer_total_remaining"></td>
                             <td class="footer_total_sell_return_due"></td>
+                            <td></td>
                             <td colspan="2"></td>
                             <td class="service_type_count"></td>
                             <td colspan="7"></td>
@@ -318,6 +320,11 @@
                     },
                     {
                         data: 'return_due',
+                        orderable: false,
+                        searchable: false
+                    },
+                    {
+                        data: 'warranty',
                         orderable: false,
                         searchable: false
                     },

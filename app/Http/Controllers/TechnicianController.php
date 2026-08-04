@@ -316,14 +316,28 @@ class TechnicianController extends Controller
             ->where('t.business_id', $business_id)
             ->where('t.type', 'sell')
             ->where('t.status', 'final')
+            ->where('t.is_warranty_exchange', 0)
             ->where(function ($q) use ($start_dt, $end_dt) {
+                // A: venta normal (sin layaway, sin repair) → transaction_date
                 $q->where(function ($q2) use ($start_dt, $end_dt) {
                     $q2->whereNull('t.layaway_id')
+                        ->whereNull('t.repair_status')
                         ->whereBetween('t.transaction_date', [$start_dt, $end_dt]);
+                // B: apartado completado → completed_at
                 })->orWhere(function ($q2) use ($start_dt, $end_dt) {
                     $q2->whereNotNull('t.layaway_id')
                         ->whereNotNull('tc_l.completed_at')
                         ->whereBetween('tc_l.completed_at', [$start_dt, $end_dt]);
+                // C: reparación ENTREGADA → repair_delivered_at (fallback transaction_date).
+                // Excluye 'pending' — las reparaciones pendientes NO aparecen aquí, la
+                // comisión del técnico se cuenta hasta el día de entrega.
+                })->orWhere(function ($q2) use ($start_dt, $end_dt) {
+                    $q2->whereNotNull('t.repair_status')
+                        ->where('t.repair_status', '!=', 'pending')
+                        ->whereBetween(
+                            \DB::raw('COALESCE(t.repair_delivered_at, t.transaction_date)'),
+                            [$start_dt, $end_dt]
+                        );
                 });
             })
             ->whereNotNull('tsl.technician_id')
@@ -339,8 +353,15 @@ class TechnicianController extends Controller
                 'tsl.repair_anticipo',
                 'tsl.technician_commission_override',
                 't.invoice_no',
-                // Fecha efectiva: apartado usa completed_at, resto transaction_date
-                \DB::raw('IF(t.layaway_id IS NOT NULL, tc_l.completed_at, t.transaction_date) as transaction_date'),
+                // Fecha efectiva:
+                //   apartado → completed_at (día de liquidación)
+                //   reparación entregada → repair_delivered_at (día de entrega, fallback transaction_date)
+                //   venta normal → transaction_date
+                \DB::raw('CASE
+                    WHEN t.layaway_id IS NOT NULL THEN tc_l.completed_at
+                    WHEN t.repair_status IS NOT NULL AND t.repair_status != "pending" THEN COALESCE(t.repair_delivered_at, t.transaction_date)
+                    ELSE t.transaction_date
+                END as transaction_date'),
                 't.location_id',
                 't.final_total',
                 'bl.name as location_name',
@@ -383,6 +404,31 @@ class TechnicianController extends Controller
                         }
                     }
                 }
+            }
+        }
+
+        // Penalizaciones por garantías registradas EN LA SEMANA del reporte.
+        // Si un cliente vino esta semana a hacer efectiva la garantía de una reparación
+        // que se hizo hace X semanas, el técnico que hizo esa reparación se queda sin
+        // esa comisión — se le resta en el periodo actual (no retroactivamente en el
+        // periodo original). Guard con hasColumn por si la migración aún no corre.
+        $warranty_penalty_by_tech = [];
+        if (\Schema::hasTable('warranty_claims') && \Schema::hasColumn('warranty_claims', 'original_technician_id')) {
+            $penalty_rows = \DB::table('warranty_claims')
+                ->where('business_id', $business_id)
+                ->where('status', 'completed')
+                ->whereNotNull('original_technician_id')
+                ->whereBetween('claim_date', [$start_dt, $end_dt])
+                ->select('original_technician_id',
+                    \DB::raw('SUM(COALESCE(technician_commission_penalty, 0)) as penalty'),
+                    \DB::raw('COUNT(*) as claim_count'))
+                ->groupBy('original_technician_id')
+                ->get();
+            foreach ($penalty_rows as $pr) {
+                $warranty_penalty_by_tech[(int) $pr->original_technician_id] = [
+                    'amount' => (float) $pr->penalty,
+                    'count' => (int) $pr->claim_count,
+                ];
             }
         }
 
@@ -463,6 +509,9 @@ class TechnicianController extends Controller
                 $week_commission += $line_commission;
             }
 
+            // Restar penalizaciones por garantías registradas en el periodo
+            $penalty = $warranty_penalty_by_tech[$tech->id] ?? ['amount' => 0, 'count' => 0];
+
             $report[] = [
                 'technician' => $tech,
                 'by_day' => $by_day,
@@ -470,7 +519,10 @@ class TechnicianController extends Controller
                 'week_count' => $week_count,
                 'week_repair_count' => $week_repair_count,
                 'week_service_count' => $week_service_count,
-                'commission_due' => $week_commission,
+                'commission_gross' => $week_commission,       // comisión bruta antes de penalizaciones
+                'warranty_penalty' => (float) $penalty['amount'],
+                'warranty_penalty_count' => (int) $penalty['count'],
+                'commission_due' => $week_commission - (float) $penalty['amount'],   // NETA (puede ser negativa)
             ];
         }
 

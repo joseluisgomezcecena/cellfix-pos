@@ -63,10 +63,16 @@ class RepairOrderController extends Controller
 
         $result = [];
         foreach ($orders as $o) {
-            $products = DB::table('transaction_sell_lines as tsl')
+            $lines = DB::table('transaction_sell_lines as tsl')
                 ->join('products as p', 'p.id', '=', 'tsl.product_id')
                 ->where('tsl.transaction_id', $o->id)
-                ->pluck('p.name')->implode(', ');
+                ->select('p.name as product_name', 'tsl.technician_id')
+                ->get();
+            $products = $lines->pluck('product_name')->implode(', ');
+            // Técnico ya asignado (si hay varios distintos, no preseleccionamos ninguno
+            // para forzar decisión manual; si todas las líneas tienen el mismo, ese).
+            $tech_ids = $lines->pluck('technician_id')->filter()->unique();
+            $assigned_technician_id = $tech_ids->count() === 1 ? (int) $tech_ids->first() : null;
 
             $result[] = [
                 'id' => $o->id,
@@ -78,6 +84,7 @@ class RepairOrderController extends Controller
                 'paid' => (float) $o->paid,
                 'balance' => round((float) $o->final_total - (float) $o->paid, 2),
                 'products' => $products,
+                'assigned_technician_id' => $assigned_technician_id,
             ];
         }
 
@@ -120,15 +127,53 @@ class RepairOrderController extends Controller
     {
         $this->authorizeAccess();
 
+        // Nuevo contrato: acepta un array `payments`, cada uno con method + montos +
+        // desglose por fila. Soporta pago múltiple (cash + tarjeta + transferencia) y
+        // cada fila cash puede combinar MXN + USD en el mismo pago.
         $request->validate([
             'technician_id' => 'nullable|integer',
-            'payment_amount' => 'nullable|numeric|min:0',
-            'payment_method' => 'required|string',
-            'card_type' => 'nullable|string',
-            'card_terminal_id' => 'nullable|integer',
-            'usd_amount' => 'nullable|numeric|min:0',
-            'exchange_rate' => 'nullable|numeric|min:0',
+            'payments' => 'nullable|array',
+            'payments.*.method' => 'required_with:payments|string',
+            'payments.*.amount_mxn' => 'nullable|numeric|min:0',
+            'payments.*.amount_usd' => 'nullable|numeric|min:0',
+            'payments.*.exchange_rate' => 'nullable|numeric|min:0',
+            'payments.*.card_type' => 'nullable|string',
+            'payments.*.card_terminal_id' => 'nullable|integer',
+            'payments.*.mxn_breakdown' => 'nullable|string',
+            'payments.*.mxn_coins' => 'nullable|numeric|min:0',
+            'payments.*.usd_breakdown' => 'nullable|string',
+            'payments.*.usd_coins' => 'nullable|numeric|min:0',
         ]);
+
+        $payments_in = $request->input('payments', []);
+        if (!is_array($payments_in)) { $payments_in = []; }
+
+        // Guard servidor: por cada fila cash con monto > 0 exigir al menos algo de
+        // desglose (MXN o USD). Es doble-check del validador JS.
+        foreach ($payments_in as $i => $p) {
+            $m = $p['method'] ?? '';
+            $amx = (float) ($p['amount_mxn'] ?? 0);
+            $ausd = (float) ($p['amount_usd'] ?? 0);
+            if ($m === 'cash') {
+                if ($amx > 0) {
+                    $mxn_bd = json_decode($p['mxn_breakdown'] ?? '', true);
+                    $mxn_coins = (float) ($p['mxn_coins'] ?? 0);
+                    if ((!is_array($mxn_bd) || empty($mxn_bd)) && $mxn_coins <= 0) {
+                        return ['success' => 0, 'msg' => 'Falta desglose MXN en la fila ' . ($i + 1) . '.'];
+                    }
+                }
+                if ($ausd > 0) {
+                    $usd_bd = json_decode($p['usd_breakdown'] ?? '', true);
+                    $usd_coins = (float) ($p['usd_coins'] ?? 0);
+                    if ((!is_array($usd_bd) || empty($usd_bd)) && $usd_coins <= 0) {
+                        return ['success' => 0, 'msg' => 'Falta desglose USD en la fila ' . ($i + 1) . '.'];
+                    }
+                }
+            }
+            if ($m === 'card' && empty($p['card_terminal_id'])) {
+                return ['success' => 0, 'msg' => 'Falta terminal en la fila ' . ($i + 1) . '.'];
+            }
+        }
 
         $business_id = $request->session()->get('user.business_id');
 
@@ -141,40 +186,58 @@ class RepairOrderController extends Controller
                 ->firstOrFail();
 
             $technician_id = $request->input('technician_id') ?: null;
-            $payment_amount = (float) $request->input('payment_amount', 0);
-            $method = $request->input('payment_method', 'cash');
-            $card_type = $request->input('card_type') ?: null;
-            $card_terminal_id = $request->input('card_terminal_id') ?: null;
-            $usd_amount = (float) $request->input('usd_amount', 0);
-            $exchange_rate = (float) $request->input('exchange_rate', 0);
-
-            // Pago en dólares: el monto en MXN = usd * tipo de cambio; se guarda el desglose
-            // para que el reporte de técnicos lo detecte como pago en dólares (D) + tipo de cambio.
-            $denomination_breakdown = null;
-            if ($usd_amount > 0 && $exchange_rate > 0) {
-                $payment_amount = round($usd_amount * $exchange_rate, 2);
-                $denomination_breakdown = json_encode([
-                    'usd' => ['coins' => $usd_amount],
-                    'exchange_rate' => $exchange_rate,
-                    'usd_in_mxn' => $payment_amount,
-                ]);
-            }
 
             // Asignar el técnico a las líneas de la orden
             TransactionSellLine::where('transaction_id', $transaction->id)
                 ->update(['technician_id' => $technician_id]);
 
-            // Registrar el pago del saldo (si hay) — se AGREGA un pago nuevo sin borrar el anticipo.
-            if ($payment_amount > 0) {
-                $prefix_type = 'sell_payment';
+            // Registrar CADA fila como un TransactionPayment nuevo (no borra el anticipo).
+            $prefix_type = 'sell_payment';
+            foreach ($payments_in as $p) {
+                $m = $p['method'] ?? 'cash';
+                $amount_mxn = (float) ($p['amount_mxn'] ?? 0);
+                $amount_usd = (float) ($p['amount_usd'] ?? 0);
+                $rate = (float) ($p['exchange_rate'] ?? 0);
+                $usd_in_mxn = ($amount_usd > 0 && $rate > 0) ? round($amount_usd * $rate, 2) : 0;
+                $total_row = round($amount_mxn + $usd_in_mxn, 2);
+                if ($total_row <= 0) { continue; }
+
+                // Construir denomination_breakdown: mismo shape que usa POS
+                // { mxn: {face: count, coins}, usd: {face: count, coins}, exchange_rate, usd_in_mxn }
+                $bd = [];
+                if ($m === 'cash') {
+                    $mxn_map = json_decode($p['mxn_breakdown'] ?? '', true);
+                    $mxn_coins = (float) ($p['mxn_coins'] ?? 0);
+                    if (is_array($mxn_map) && !empty($mxn_map)) {
+                        $bd['mxn'] = array_map('intval', $mxn_map);
+                    } elseif ($mxn_coins > 0) {
+                        $bd['mxn'] = [];
+                    }
+                    if ($mxn_coins > 0) { $bd['mxn']['coins'] = $mxn_coins; }
+
+                    $usd_map = json_decode($p['usd_breakdown'] ?? '', true);
+                    $usd_coins = (float) ($p['usd_coins'] ?? 0);
+                    if (is_array($usd_map) && !empty($usd_map)) {
+                        $bd['usd'] = array_map('intval', $usd_map);
+                    } elseif ($usd_coins > 0) {
+                        $bd['usd'] = [];
+                    }
+                    if ($usd_coins > 0) { $bd['usd']['coins'] = $usd_coins; }
+
+                    if (!empty($bd['usd']) && $rate > 0) {
+                        $bd['exchange_rate'] = $rate;
+                        $bd['usd_in_mxn'] = $usd_in_mxn;
+                    }
+                }
+
                 $ref_count = $this->transactionUtil->setAndGetReferenceCount($prefix_type, $business_id);
                 TransactionPayment::create([
                     'transaction_id' => $transaction->id,
-                    'amount' => $payment_amount,
-                    'method' => $method,
-                    'card_type' => $method === 'card' ? $card_type : null,
-                    'card_terminal_id' => $method === 'card' ? $card_terminal_id : null,
-                    'denomination_breakdown' => $denomination_breakdown,
+                    'amount' => $total_row,
+                    'method' => $m,
+                    'card_type' => $m === 'card' ? ($p['card_type'] ?? null) : null,
+                    'card_terminal_id' => $m === 'card' ? ($p['card_terminal_id'] ?? null) : null,
+                    'denomination_breakdown' => !empty($bd) ? json_encode($bd) : null,
                     'paid_on' => Carbon::now()->toDateTimeString(),
                     'created_by' => auth()->id(),
                     'payment_for' => $transaction->contact_id,
@@ -186,6 +249,12 @@ class RepairOrderController extends Controller
             $this->transactionUtil->updatePaymentStatus($transaction->id, $transaction->final_total);
 
             $transaction->repair_status = 'delivered';
+            // Timestamp de entrega — usado por los reportes/corte para atribuir la
+            // reparación al día en que se cerró, no al día en que se recibió.
+            // Guard con hasColumn por si la migración aún no corre en algún ambiente.
+            if (\Schema::hasColumn('transactions', 'repair_delivered_at')) {
+                $transaction->repair_delivered_at = Carbon::now();
+            }
             $transaction->save();
 
             DB::commit();
@@ -313,18 +382,42 @@ class RepairOrderController extends Controller
         $recordsFiltered = (clone $baseQuery)->count();
         $recordsTotal = $recordsFiltered;
 
+        // Select: agrego repair_delivered_at si existe (fallback a updated_at para
+        // reparaciones históricas entregadas antes de la migración).
+        $select_cols = [
+            't.id', 't.invoice_no', 't.transaction_date', 't.repair_status', 't.final_total',
+            't.location_id', 't.updated_at',
+            'c.name as customer', 'c.mobile',
+            'bl.name as location_name',
+        ];
+        if (\Schema::hasColumn('transactions', 'repair_delivered_at')) {
+            $select_cols[] = 't.repair_delivered_at';
+        }
+
         // Paginación
         $orders = $baseQuery
-            ->select(
-                't.id', 't.invoice_no', 't.transaction_date', 't.repair_status', 't.final_total',
-                't.location_id',
-                'c.name as customer', 'c.mobile',
-                'bl.name as location_name'
-            )
+            ->select($select_cols)
             ->orderBy('t.transaction_date', 'desc')
             ->limit($length > 0 ? $length : 25)
             ->offset($start)
             ->get();
+
+        // Anticipo por orden = SUM de pagos con paid_on < fecha de entrega.
+        // Si la orden aún NO se ha entregado, todos los pagos son "anticipo" hasta ahora.
+        // Batch para las órdenes visibles en la página, en 1 sola query.
+        $tx_ids = $orders->pluck('id')->toArray();
+        $payments_by_tx = [];
+        if (!empty($tx_ids)) {
+            $payments_rows = DB::table('transaction_payments')
+                ->whereIn('transaction_id', $tx_ids)
+                ->where('is_return', 0)
+                ->select('transaction_id', 'amount', 'paid_on')
+                ->orderBy('paid_on')
+                ->get();
+            foreach ($payments_rows as $p) {
+                $payments_by_tx[$p->transaction_id][] = $p;
+            }
+        }
 
         $data = [];
         foreach ($orders as $o) {
@@ -340,6 +433,35 @@ class RepairOrderController extends Controller
             $current_technician_id = $lines->pluck('technician_id')->filter()->unique();
             $current_technician_id = $current_technician_id->count() === 1 ? $current_technician_id->first() : null;
 
+            // Fecha de entrega: preferimos repair_delivered_at si la migración corrió.
+            // Fallback para históricos: updated_at si repair_status='delivered'.
+            $delivered_at = null;
+            if (!empty($o->repair_delivered_at ?? null)) {
+                $delivered_at = Carbon::parse($o->repair_delivered_at)->format('d/m/Y H:i');
+            } elseif ($o->repair_status === 'delivered' && !empty($o->updated_at)) {
+                $delivered_at = Carbon::parse($o->updated_at)->format('d/m/Y H:i');
+            }
+
+            // Anticipo: si YA está entregada, es la suma de pagos antes de la entrega.
+            // Si NO está entregada, todos los pagos hasta ahora cuentan como anticipo.
+            $pays = $payments_by_tx[$o->id] ?? [];
+            $anticipo_amount = 0.0;
+            $anticipo_date = null;
+            $cutoff = null;
+            if (!empty($o->repair_delivered_at ?? null)) {
+                $cutoff = Carbon::parse($o->repair_delivered_at);
+            }
+            foreach ($pays as $p) {
+                $paid_on = Carbon::parse($p->paid_on);
+                $is_before_delivery = ($cutoff === null) || $paid_on->lt($cutoff);
+                if ($is_before_delivery) {
+                    $anticipo_amount += (float) $p->amount;
+                    if ($anticipo_date === null) {
+                        $anticipo_date = $paid_on->format('d/m/Y H:i');
+                    }
+                }
+            }
+
             $data[] = [
                 'id' => $o->id,
                 'invoice_no' => $o->invoice_no,
@@ -352,6 +474,9 @@ class RepairOrderController extends Controller
                 'repair_status' => $o->repair_status,
                 'location' => $o->location_name,
                 'total' => (float) $o->final_total,
+                'anticipo_amount' => $anticipo_amount,
+                'anticipo_date' => $anticipo_date,
+                'delivered_at' => $delivered_at,
             ];
         }
 

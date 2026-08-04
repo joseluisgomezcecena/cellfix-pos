@@ -473,6 +473,89 @@
     </div>
     @endif
 
+    {{-- Lista detallada de gastos + devoluciones del día (salidas de dinero) --}}
+    @if(isset($expenses_list) && count($expenses_list) > 0)
+    <div class="row">
+        <div class="col-md-12">
+            @component('components.widget', ['class' => 'box-danger', 'title' => 'Gastos y devoluciones del día (' . count($expenses_list) . ')'])
+                <div class="table-responsive">
+                    <table class="table table-bordered table-condensed table-striped">
+                        <thead>
+                            <tr style="background-color:#f5f5f5;">
+                                <th class="text-center" style="width:30px;">#</th>
+                                <th>Hora</th>
+                                <th>Motivo</th>
+                                <th>Factura / Referencia</th>
+                                <th>Registrado por</th>
+                                <th>Método de pago</th>
+                                <th>Nota</th>
+                                <th class="text-right">Total</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @php
+                                $exp_running_total = 0;
+                                // Normalización de nombres largos de categoría para que
+                                // "motivo" se muestre en formato corto y consistente.
+                                $motivo_short = function ($m) {
+                                    $u = mb_strtoupper($m);
+                                    if (str_contains($u, 'GARANT')) return 'Garantía';
+                                    if (str_contains($u, 'COMPRA')) return 'Compra';
+                                    if (str_contains($u, 'GASTO INTERNO')) return 'Gasto interno';
+                                    if ($m === 'Devolución') return 'Devolución';
+                                    return $m;
+                                };
+                            @endphp
+                            @foreach($expenses_list as $i => $exp)
+                                @php
+                                    $exp_running_total += (float) $exp->final_total;
+                                    $emethods = $exp_payments_by_tx[$exp->id] ?? [];
+                                    $emethods_labels = collect($emethods)->unique()->map(function($m) use ($method_labels) {
+                                        return $method_labels[$m] ?? ucfirst($m);
+                                    })->implode(', ');
+                                    $badge_color = $exp->origen === 'return' ? '#c62828' : '#B8781C';
+                                @endphp
+                                <tr>
+                                    <td class="text-center">{{ $i + 1 }}</td>
+                                    <td><small>{{ \Carbon\Carbon::parse($exp->transaction_date)->format('H:i') }}</small></td>
+                                    <td>
+                                        <span style="display:inline-block; padding:2px 8px; border-radius:2px; font-size:11px; font-weight:700; color:#fff; background:{{ $badge_color }};">
+                                            {{ $motivo_short($exp->motivo) }}
+                                        </span>
+                                    </td>
+                                    <td>
+                                        @if(!empty($exp->referencia))
+                                            @if($exp->origen === 'return')
+                                                <a href="{{ url('/sells/' . $exp->id) }}" target="_blank" class="no-print">{{ $exp->referencia }}</a><span class="print-only">{{ $exp->referencia }}</span>
+                                            @else
+                                                <small>{{ $exp->referencia }}</small>
+                                            @endif
+                                        @else
+                                            <small class="text-muted">—</small>
+                                        @endif
+                                    </td>
+                                    <td><small>{{ trim($exp->vendedor) ?: '-' }}</small></td>
+                                    <td><small>{{ $emethods_labels ?: '-' }}</small></td>
+                                    <td><small class="text-muted">{{ \Illuminate\Support\Str::limit($exp->additional_notes, 40) }}</small></td>
+                                    <td class="text-right"><span class="display_currency" data-currency_symbol="true">{{ $exp->final_total }}</span></td>
+                                </tr>
+                            @endforeach
+                            <tr style="background:#fbe9e7;">
+                                <th colspan="7" class="text-right" style="color:#c62828;">TOTAL DE SALIDAS:</th>
+                                <th class="text-right" style="color:#c62828;"><span class="display_currency" data-currency_symbol="true">{{ $exp_running_total }}</span></th>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <p style="font-size:11px; color:#6c757d; margin:6px 0 0;">
+                    <i class="fas fa-info-circle"></i>
+                    Incluye gastos formales (interno, compras, garantías) y devoluciones a clientes. Todo es dinero que sale del cajón.
+                </p>
+            @endcomponent
+        </div>
+    </div>
+    @endif
+
     <div class="row">
         <div class="col-md-12">
             <p class="text-muted">
