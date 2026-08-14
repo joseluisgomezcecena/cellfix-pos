@@ -19,12 +19,17 @@ class DailyCutController extends Controller
 
     public function index(Request $request)
     {
-        if (!auth()->user()->can('business_settings.access') && !auth()->user()->can('view_purchase_n_sell_report')) {
+        if (!auth()->user()->can('business_settings.access') && !auth()->user()->can('view_purchase_n_sell_report') && !auth()->user()->can('celfix.daily_cuts.view')) {
             abort(403, 'Unauthorized action.');
         }
 
         $business_id = $request->session()->get('user.business_id');
         $user_id = $request->session()->get('user.id');
+
+        // Scope por sucursal (gerentes de sucursal solo ven la suya).
+        // permitted_locations() retorna 'all' para superadmin/access_all_locations;
+        // o [id1, id2, ...] si el user tiene permisos específicos 'location.X'.
+        $permitted = auth()->user()->permitted_locations();
 
         $location_id = $request->get('location_id');
         $start_date = $request->get('start_date', Carbon::now()->subDays(7)->toDateString());
@@ -40,11 +45,16 @@ class DailyCutController extends Controller
             ->orderBy('cut_date', 'desc')
             ->orderBy('location_id');
 
+        if ($permitted !== 'all') {
+            $cuts->whereIn('location_id', $permitted);
+        }
         if (!empty($location_id)) {
             $cuts->where('location_id', $location_id);
         }
 
         $cuts = $cuts->get();
+        // BusinessLocation::forDropdown ya respeta permitted_locations internamente,
+        // así que el dropdown de sucursal solo muestra las del gerente.
         $locations = BusinessLocation::forDropdown($business_id);
 
         // Estado del corte automático de hoy (¿se generó ya después de las 18:00?)
@@ -61,7 +71,7 @@ class DailyCutController extends Controller
 
     public function show($id)
     {
-        if (!auth()->user()->can('business_settings.access') && !auth()->user()->can('view_purchase_n_sell_report')) {
+        if (!auth()->user()->can('business_settings.access') && !auth()->user()->can('view_purchase_n_sell_report') && !auth()->user()->can('celfix.daily_cuts.view')) {
             abort(403, 'Unauthorized action.');
         }
 
@@ -69,6 +79,13 @@ class DailyCutController extends Controller
         $cut = DailyCut::where('business_id', $business_id)
             ->with('location', 'generatedBy')
             ->findOrFail($id);
+
+        // Gerente de sucursal solo puede ver cortes de su sucursal. Evita que
+        // manipulen el /daily-cuts/{id} en el URL con un id ajeno.
+        $permitted = auth()->user()->permitted_locations();
+        if ($permitted !== 'all' && !in_array($cut->location_id, $permitted)) {
+            abort(403, 'No tienes acceso a esta sucursal.');
+        }
 
         // Regenerar el cut antes de mostrarlo para que refleje las reglas actuales
         // (F: reparaciones pendientes excluidas, entregadas atribuidas al día de
@@ -230,11 +247,12 @@ class DailyCutController extends Controller
      */
     public function weekly(Request $request)
     {
-        if (!auth()->user()->can('business_settings.access') && !auth()->user()->can('view_purchase_n_sell_report')) {
+        if (!auth()->user()->can('business_settings.access') && !auth()->user()->can('view_purchase_n_sell_report') && !auth()->user()->can('celfix.daily_cuts.view')) {
             abort(403, 'Unauthorized action.');
         }
 
         $business_id = $request->session()->get('user.business_id');
+        $permitted = auth()->user()->permitted_locations();
 
         // Default to this week's Monday — Mon–Sun week
         $start_date = $request->get('start_date');
@@ -268,6 +286,14 @@ class DailyCutController extends Controller
         $is_all = ($location_id === 'all');
         $specific_loc_id = $is_all ? null : (int) $location_id;
 
+        // Gerente con scope de sucursal: bloquear intento de ver otra sucursal
+        // vía URL manipulado, y limitar el "all" al scope permitido.
+        if ($permitted !== 'all') {
+            if (!$is_all && !in_array($specific_loc_id, $permitted)) {
+                abort(403, 'No tienes acceso a esta sucursal.');
+            }
+        }
+
         // Make sure cuts are fresh in the requested range
         $this->ensureCutsForRange($business_id, $start->toDateString(), $end->toDateString(), $specific_loc_id);
 
@@ -276,6 +302,9 @@ class DailyCutController extends Controller
             ->whereBetween('cut_date', [$start->toDateString(), $end->toDateString()]);
         if (!$is_all) {
             $query->where('location_id', $specific_loc_id);
+        }
+        if ($permitted !== 'all') {
+            $query->whereIn('location_id', $permitted);
         }
 
         $cuts = $query->get();
@@ -286,12 +315,29 @@ class DailyCutController extends Controller
             return $c->cut_date->toDateString();
         });
 
+        // Conteos manuales del cajero para las mismas fechas / sucursal(es).
+        // Se muestran como una línea "EFECTIVO POR EL VENDEDOR" debajo del efectivo del
+        // sistema para que el gerente pueda cruzarlos. Cuando is_all, suma todas las sucursales.
+        $vc_query = \App\DailyCutVendorCount::where('business_id', $business_id)
+            ->whereBetween('cut_date', [$start->toDateString(), $end->toDateString()]);
+        if (!$is_all) {
+            $vc_query->where('location_id', $specific_loc_id);
+        }
+        $vendor_counts = $vc_query->get()->groupBy(function ($v) {
+            return $v->cut_date->toDateString();
+        });
+
         // Aggregate per day (sum across locations if no location filter)
         $days = [];
         for ($i = 0; $i < 7; $i++) {
             $date = $start->copy()->addDays($i);
             $key = $date->toDateString();
             $day_cuts = $cuts_by_date->get($key, collect());
+
+            // Suma del conteo del vendedor para el día (todas las sucursales visibles)
+            $vc_day = $vendor_counts->get($key, collect());
+            $vc_total_mxn = 0;
+            foreach ($vc_day as $vc) $vc_total_mxn += $vc->totalInMxn();
 
             $days[$key] = [
                 'date' => $date,
@@ -304,6 +350,8 @@ class DailyCutController extends Controller
                 'total_expenses' => $day_cuts->sum('total_expenses'),
                 'sales_by_brand' => $this->mergeBrandTotals($day_cuts),
                 'card_by_terminal' => $this->mergeTerminalTotals($day_cuts),
+                'vendor_cash_count' => $vc_total_mxn,
+                'vendor_cash_has_data' => $vc_day->isNotEmpty(),
             ];
         }
 
@@ -318,11 +366,12 @@ class DailyCutController extends Controller
      */
     public function denominations(Request $request)
     {
-        if (!auth()->user()->can('business_settings.access') && !auth()->user()->can('view_purchase_n_sell_report')) {
+        if (!auth()->user()->can('business_settings.access') && !auth()->user()->can('view_purchase_n_sell_report') && !auth()->user()->can('celfix.daily_cuts.view')) {
             abort(403, 'Unauthorized action.');
         }
 
         $business_id = $request->session()->get('user.business_id');
+        $permitted = auth()->user()->permitted_locations();
 
         $start_date = $request->get('start_date');
         if (empty($start_date)) {
@@ -336,6 +385,11 @@ class DailyCutController extends Controller
 
         $location_id = $request->get('location_id');
 
+        // Gerente con scope: bloquear ver otra sucursal vía URL manipulado.
+        if ($permitted !== 'all' && !empty($location_id) && !in_array((int) $location_id, $permitted)) {
+            abort(403, 'No tienes acceso a esta sucursal.');
+        }
+
         // Make sure cuts are fresh in the requested range
         $this->ensureCutsForRange($business_id, $start->toDateString(), $end->toDateString(), $location_id);
 
@@ -344,6 +398,9 @@ class DailyCutController extends Controller
 
         if (!empty($location_id)) {
             $query->where('location_id', $location_id);
+        }
+        if ($permitted !== 'all') {
+            $query->whereIn('location_id', $permitted);
         }
 
         $cuts = $query->get();
@@ -539,12 +596,87 @@ class DailyCutController extends Controller
 
         $locations = BusinessLocation::forDropdown($business_id);
 
+        // Conteos manuales del cajero para esta sucursal y semana. Se mostrarán
+        // como una fila extra debajo de cada día para que el cajero los capture
+        // y compare contra el conteo del sistema. Solo cuando hay sucursal específica.
+        $vendor_counts_by_date = [];
+        if (!empty($location_id)) {
+            $rows_vc = \App\DailyCutVendorCount::where('business_id', $business_id)
+                ->where('location_id', $location_id)
+                ->whereBetween('cut_date', [$start->toDateString(), $end->toDateString()])
+                ->get();
+            foreach ($rows_vc as $vc) {
+                $vendor_counts_by_date[$vc->cut_date->toDateString()] = $vc;
+            }
+        }
+
         return view('daily_cut.denominations', compact(
             'rows', 'totals', 'mxn_faces', 'usd_faces', 'terminal_names',
             'start_date', 'location_id', 'locations',
             'weekly_total_cash', 'undesglosado_cash', 'weekly_total_expenses',
-            'weekly_expenses_by_category'
+            'weekly_expenses_by_category', 'vendor_counts_by_date'
         ));
+    }
+
+    /**
+     * Guarda/actualiza el conteo manual de billetes del cajero para una sucursal
+     * y fecha específica. Es independiente del summary del cut.
+     */
+    public function saveVendorCounts(Request $request)
+    {
+        if (!auth()->user()->can('business_settings.access') && !auth()->user()->can('view_purchase_n_sell_report') && !auth()->user()->can('celfix.daily_cuts.view')) {
+            abort(403, 'Unauthorized action.');
+        }
+        $request->validate([
+            'location_id' => 'required|integer',
+            'cut_date' => 'required|date',
+            'mxn_counts' => 'nullable|array',
+            'mxn_coins' => 'nullable|numeric|min:0',
+            'usd_counts' => 'nullable|array',
+            'usd_coins' => 'nullable|numeric|min:0',
+            'usd_exchange_rate' => 'nullable|numeric|min:0',
+            'note' => 'nullable|string|max:500',
+        ]);
+
+        $business_id = $request->session()->get('user.business_id');
+        $location_id = (int) $request->input('location_id');
+
+        // Gerente con scope: solo puede guardar de su sucursal.
+        $permitted = auth()->user()->permitted_locations();
+        if ($permitted !== 'all' && !in_array($location_id, $permitted)) {
+            abort(403, 'No tienes acceso a esta sucursal.');
+        }
+
+        // Limpia counts: solo faces numéricos con cantidad > 0.
+        $clean = function ($arr) {
+            $out = [];
+            if (!is_array($arr)) return $out;
+            foreach ($arr as $face => $count) {
+                $c = (int) $count;
+                if (is_numeric($face) && $c > 0) $out[(string) (int) $face] = $c;
+            }
+            return $out;
+        };
+
+        \App\DailyCutVendorCount::updateOrCreate(
+            [
+                'business_id' => $business_id,
+                'location_id' => $location_id,
+                'cut_date' => $request->input('cut_date'),
+            ],
+            [
+                'mxn_counts' => $clean($request->input('mxn_counts')),
+                'mxn_coins' => (float) $request->input('mxn_coins', 0),
+                'usd_counts' => $clean($request->input('usd_counts')),
+                'usd_coins' => (float) $request->input('usd_coins', 0),
+                'usd_exchange_rate' => $request->input('usd_exchange_rate') ? (float) $request->input('usd_exchange_rate') : null,
+                'note' => $request->input('note'),
+                'updated_by' => auth()->id(),
+                'created_by' => auth()->id(),
+            ]
+        );
+
+        return response()->json(['success' => 1, 'msg' => 'Conteo del cajero guardado.']);
     }
 
     private function dayName($dow)
@@ -700,6 +832,11 @@ class DailyCutController extends Controller
             }
         }
 
+        // Orden alfabético para que las categorías salgan igual en cada día del
+        // reporte semanal. Antes cada día aparecía en el orden que trajo el summary
+        // (dependiente del switch/foreach) y el ojo no las podía comparar.
+        ksort($merged);
+
         return array_values($merged);
     }
 
@@ -725,11 +862,12 @@ class DailyCutController extends Controller
      */
     public function exportWeekly(Request $request)
     {
-        if (!auth()->user()->can('business_settings.access') && !auth()->user()->can('view_purchase_n_sell_report')) {
+        if (!auth()->user()->can('business_settings.access') && !auth()->user()->can('view_purchase_n_sell_report') && !auth()->user()->can('celfix.daily_cuts.view')) {
             abort(403, 'Unauthorized action.');
         }
 
         $business_id = $request->session()->get('user.business_id');
+        $permitted = auth()->user()->permitted_locations();
 
         $start_date = $request->get('start_date');
         if (empty($start_date)) {
@@ -739,6 +877,18 @@ class DailyCutController extends Controller
             $start_date = $today->copy()->subDays($daysSinceStart)->toDateString();
         }
         $location_id = $request->get('location_id');
+
+        // Gerente con scope: bloquear export de sucursales ajenas. Si no envió
+        // sucursal explícita, forzarla a la primera permitida (no queremos que
+        // el export incluya sucursales fuera de su alcance).
+        if ($permitted !== 'all') {
+            if (!empty($location_id) && !in_array((int) $location_id, $permitted)) {
+                abort(403, 'No tienes acceso a esta sucursal.');
+            }
+            if (empty($location_id)) {
+                $location_id = reset($permitted);
+            }
+        }
 
         $end = Carbon::parse($start_date)->addDays(6)->toDateString();
 
@@ -758,14 +908,25 @@ class DailyCutController extends Controller
      */
     public function export(Request $request)
     {
-        if (!auth()->user()->can('business_settings.access') && !auth()->user()->can('view_purchase_n_sell_report')) {
+        if (!auth()->user()->can('business_settings.access') && !auth()->user()->can('view_purchase_n_sell_report') && !auth()->user()->can('celfix.daily_cuts.view')) {
             abort(403, 'Unauthorized action.');
         }
 
         $business_id = $request->session()->get('user.business_id');
+        $permitted = auth()->user()->permitted_locations();
         $start_date = $request->get('start_date', Carbon::now()->subDays(7)->toDateString());
         $end_date = $request->get('end_date', Carbon::now()->toDateString());
         $location_id = $request->get('location_id');
+
+        // Gerente con scope: mismo bloqueo y fallback que exportWeekly.
+        if ($permitted !== 'all') {
+            if (!empty($location_id) && !in_array((int) $location_id, $permitted)) {
+                abort(403, 'No tienes acceso a esta sucursal.');
+            }
+            if (empty($location_id)) {
+                $location_id = reset($permitted);
+            }
+        }
 
         // Auto-regenerate cuts in the range
         $this->ensureCutsForRange($business_id, $start_date, $end_date, $location_id);
@@ -967,6 +1128,12 @@ class DailyCutController extends Controller
             // Verifica que la sucursal pertenezca al business
             \App\BusinessLocation::where('business_id', $business_id)->findOrFail($location_id);
 
+            // Gerente con scope: solo puede cerrar cortes de su sucursal.
+            $permitted = auth()->user()->permitted_locations();
+            if ($permitted !== 'all' && !in_array($location_id, $permitted)) {
+                abort(403, 'No tienes acceso a esta sucursal.');
+            }
+
             // Genera/regenera el corte con datos actuales (es el snapshot que va a quedar fijo)
             $cut = $this->util->upsert($business_id, $location_id, $date, $user_id);
 
@@ -1000,6 +1167,13 @@ class DailyCutController extends Controller
 
         try {
             $cut = DailyCut::where('business_id', $business_id)->findOrFail($id);
+
+            // Gerente con scope: solo puede reabrir cortes de su sucursal.
+            $permitted = auth()->user()->permitted_locations();
+            if ($permitted !== 'all' && !in_array($cut->location_id, $permitted)) {
+                abort(403, 'No tienes acceso a esta sucursal.');
+            }
+
             $cut->closed_at = null;
             $cut->closed_by = null;
             $cut->save();

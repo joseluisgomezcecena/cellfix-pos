@@ -25,7 +25,7 @@ class RepairOrderController extends Controller
     {
         if (! auth()->user()->can('sell.create')
             && ! auth()->user()->can('sell.update')
-            && ! auth()->user()->can('business_settings.access')) {
+            && ! auth()->user()->can('business_settings.access') && ! auth()->user()->can('celfix.technicians.repair_orders')) {
             abort(403, 'Unauthorized action.');
         }
     }
@@ -161,12 +161,31 @@ class RepairOrderController extends Controller
                     if ((!is_array($mxn_bd) || empty($mxn_bd)) && $mxn_coins <= 0) {
                         return ['success' => 0, 'msg' => 'Falta desglose MXN en la fila ' . ($i + 1) . '.'];
                     }
+                    // Suma real (billetes + monedas) vs amount MXN declarado.
+                    $sum_mxn = $mxn_coins;
+                    if (is_array($mxn_bd)) foreach ($mxn_bd as $face => $cnt) {
+                        if (is_numeric($face)) $sum_mxn += (int) $face * (int) $cnt;
+                    }
+                    if (abs($sum_mxn - $amx) > 0.5) {
+                        return ['success' => 0, 'msg' => sprintf(
+                            'Fila %d: el desglose MXN suma $%s pero el monto es $%s.',
+                            $i + 1, number_format($sum_mxn, 2), number_format($amx, 2))];
+                    }
                 }
                 if ($ausd > 0) {
                     $usd_bd = json_decode($p['usd_breakdown'] ?? '', true);
                     $usd_coins = (float) ($p['usd_coins'] ?? 0);
                     if ((!is_array($usd_bd) || empty($usd_bd)) && $usd_coins <= 0) {
                         return ['success' => 0, 'msg' => 'Falta desglose USD en la fila ' . ($i + 1) . '.'];
+                    }
+                    $sum_usd = $usd_coins;
+                    if (is_array($usd_bd)) foreach ($usd_bd as $face => $cnt) {
+                        if (is_numeric($face)) $sum_usd += (int) $face * (int) $cnt;
+                    }
+                    if (abs($sum_usd - $ausd) > 0.5) {
+                        return ['success' => 0, 'msg' => sprintf(
+                            'Fila %d: el desglose USD suma $%s pero el monto es $%s.',
+                            $i + 1, number_format($sum_usd, 2), number_format($ausd, 2))];
                     }
                 }
             }
@@ -275,7 +294,7 @@ class RepairOrderController extends Controller
      */
     public function adminIndex()
     {
-        if (! auth()->user()->can('business_settings.access')) {
+        if (! auth()->user()->can('business_settings.access') && ! auth()->user()->can('celfix.technicians.repair_orders')) {
             abort(403, 'Unauthorized action.');
         }
 
@@ -298,7 +317,7 @@ class RepairOrderController extends Controller
      */
     public function adminSearch(Request $request)
     {
-        if (! auth()->user()->can('business_settings.access')) {
+        if (! auth()->user()->can('business_settings.access') && ! auth()->user()->can('celfix.technicians.repair_orders')) {
             abort(403, 'Unauthorized action.');
         }
 
@@ -489,26 +508,104 @@ class RepairOrderController extends Controller
     }
 
     /**
-     * Cambia el técnico asignado a TODAS las líneas de una orden de reparación.
+     * Devuelve las líneas de una reparación (producto + técnico actual por línea)
+     * para poblar el modal de cambio de técnico cuando hay varios técnicos.
+     */
+    public function repairLines(Request $request, $id)
+    {
+        if (! auth()->user()->can('business_settings.access') && ! auth()->user()->can('celfix.technicians.repair_orders')) {
+            abort(403, 'Unauthorized action.');
+        }
+
+        $business_id = $request->session()->get('user.business_id');
+        $transaction = Transaction::where('business_id', $business_id)
+            ->where('id', $id)
+            ->whereExists(function ($sub) {
+                $sub->select(DB::raw(1))
+                    ->from('transaction_sell_lines as tsl_r')
+                    ->whereRaw('tsl_r.transaction_id = transactions.id')
+                    ->whereNotNull('tsl_r.technician_id');
+            })
+            ->firstOrFail();
+
+        $lines = DB::table('transaction_sell_lines as tsl')
+            ->join('products as p', 'p.id', '=', 'tsl.product_id')
+            ->leftJoin('technicians as tc', 'tc.id', '=', 'tsl.technician_id')
+            ->where('tsl.transaction_id', $transaction->id)
+            ->whereNotNull('tsl.technician_id')
+            ->select(
+                'tsl.id as tsl_id',
+                'p.name as product_name',
+                'tsl.technician_id',
+                'tc.name as technician_name'
+            )
+            ->get();
+
+        return response()->json(['success' => 1, 'lines' => $lines]);
+    }
+
+    /**
+     * Cambia el técnico asignado. Acepta dos formatos:
+     *   - Legacy: {technician_id: X} → aplica a TODAS las líneas.
+     *   - Por línea: {assignments: {tsl_id: technician_id, ...}} → cada línea a un técnico
+     *     distinto. Útil cuando la reparación tiene 2+ técnicos y queremos mantenerlos.
      */
     public function changeTechnician(Request $request, $id)
     {
-        if (! auth()->user()->can('business_settings.access')) {
+        if (! auth()->user()->can('business_settings.access') && ! auth()->user()->can('celfix.technicians.repair_orders')) {
             abort(403, 'Unauthorized action.');
         }
 
         $request->validate([
             'technician_id' => 'nullable|integer',
+            'assignments' => 'nullable|array',
         ]);
 
         $business_id = $request->session()->get('user.business_id');
 
         try {
+            // Consideramos "reparación" cualquier transacción del negocio con al menos una
+            // línea con technician_id asignado — mismo criterio que el listado admin.
+            // Antes exigíamos whereNotNull('repair_status'), pero eso bloqueaba las miles
+            // de reparaciones históricas donde ese campo quedó NULL.
             $transaction = Transaction::where('business_id', $business_id)
                 ->where('id', $id)
-                ->whereNotNull('repair_status')
+                ->whereExists(function ($sub) {
+                    $sub->select(DB::raw(1))
+                        ->from('transaction_sell_lines as tsl_r')
+                        ->whereRaw('tsl_r.transaction_id = transactions.id')
+                        ->whereNotNull('tsl_r.technician_id');
+                })
                 ->firstOrFail();
 
+            $assignments = $request->input('assignments');
+            // Modo por-línea: solo si viene un array no vacío con al menos una asignación.
+            if (is_array($assignments) && !empty($assignments)) {
+                // Validar cada técnico contra el negocio.
+                $tech_ids = array_filter(array_values($assignments), fn ($v) => $v !== null && $v !== '');
+                if (!empty($tech_ids)) {
+                    $valid = Technician::where('business_id', $business_id)
+                        ->whereIn('id', $tech_ids)->pluck('id')->toArray();
+                    $invalid = array_diff($tech_ids, $valid);
+                    if (!empty($invalid)) {
+                        return response()->json(['success' => 0, 'msg' => 'Uno o más técnicos no son válidos.']);
+                    }
+                }
+                // tsl_ids deben pertenecer a la transacción — evita que un admin de otro
+                // negocio mande tsl_ids ajenos.
+                $tx_tsl_ids = TransactionSellLine::where('transaction_id', $transaction->id)
+                    ->pluck('id')->toArray();
+                DB::beginTransaction();
+                foreach ($assignments as $tsl_id => $tech_id) {
+                    if (!in_array((int) $tsl_id, $tx_tsl_ids)) continue;
+                    TransactionSellLine::where('id', $tsl_id)
+                        ->update(['technician_id' => empty($tech_id) ? null : (int) $tech_id]);
+                }
+                DB::commit();
+                return response()->json(['success' => 1, 'msg' => 'Técnicos actualizados por línea.']);
+            }
+
+            // Modo legacy: aplica UN técnico a TODAS las líneas.
             $technician_id = $request->input('technician_id') ?: null;
 
             // Validar que el técnico (si se especifica) pertenezca al business

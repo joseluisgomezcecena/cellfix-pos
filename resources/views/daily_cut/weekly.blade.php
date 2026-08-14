@@ -138,6 +138,25 @@
                                         <span class="display_currency" data-currency_symbol="true">{{ $day['total_cash'] }}</span>
                                     </td>
                                 </tr>
+                                {{-- Conteo manual del cajero: suma total en MXN de billetes que él capturó
+                                     en /daily-cuts/denominations. Aparece SIEMPRE (aunque sea $0) cuando
+                                     hay datos capturados; el gerente lo cruza con EFECTIVO del sistema. --}}
+                                @if($day['vendor_cash_has_data'] ?? false)
+                                    <tr style="background-color:#fffbe6;">
+                                        <td style="padding-left:18px;"><small><em>↳ Efectivo por el vendedor</em></small></td>
+                                        <td class="text-right">
+                                            <small>
+                                                <span class="display_currency" data-currency_symbol="true">{{ $day['vendor_cash_count'] }}</span>
+                                                @php $diff = $day['vendor_cash_count'] - $day['total_cash']; @endphp
+                                                @if(abs($diff) >= 0.5)
+                                                    <span style="color:{{ $diff > 0 ? '#2e7d32' : '#c62828' }}; font-weight:bold;">
+                                                        ({{ $diff > 0 ? '+' : '' }}${{ number_format($diff, 2) }})
+                                                    </span>
+                                                @endif
+                                            </small>
+                                        </td>
+                                    </tr>
+                                @endif
                                 <tr style="background-color: #e3f2fd; font-weight: bold;">
                                     <td>TARJETA</td>
                                     <td class="text-right">

@@ -13,7 +13,7 @@ class TechnicianController extends Controller
 {
     public function index()
     {
-        if (!auth()->user()->can('business_settings.access')) {
+        if (!auth()->user()->can('business_settings.access') && !auth()->user()->can('celfix.technicians.manage')) {
             abort(403, 'Unauthorized action.');
         }
 
@@ -56,7 +56,7 @@ class TechnicianController extends Controller
      */
     public function repairCommissions()
     {
-        if (!auth()->user()->can('business_settings.access')) {
+        if (!auth()->user()->can('business_settings.access') && !auth()->user()->can('celfix.technicians.manage')) {
             abort(403, 'Unauthorized action.');
         }
 
@@ -94,7 +94,7 @@ class TechnicianController extends Controller
 
     public function saveRepairCommissions(Request $request)
     {
-        if (!auth()->user()->can('business_settings.access')) {
+        if (!auth()->user()->can('business_settings.access') && !auth()->user()->can('celfix.technicians.manage')) {
             abort(403, 'Unauthorized action.');
         }
 
@@ -135,7 +135,7 @@ class TechnicianController extends Controller
 
     public function create()
     {
-        if (!auth()->user()->can('business_settings.access')) {
+        if (!auth()->user()->can('business_settings.access') && !auth()->user()->can('celfix.technicians.manage')) {
             abort(403, 'Unauthorized action.');
         }
 
@@ -147,7 +147,7 @@ class TechnicianController extends Controller
 
     public function store(Request $request)
     {
-        if (!auth()->user()->can('business_settings.access')) {
+        if (!auth()->user()->can('business_settings.access') && !auth()->user()->can('celfix.technicians.manage')) {
             abort(403, 'Unauthorized action.');
         }
 
@@ -180,7 +180,7 @@ class TechnicianController extends Controller
 
     public function edit($id)
     {
-        if (!auth()->user()->can('business_settings.access')) {
+        if (!auth()->user()->can('business_settings.access') && !auth()->user()->can('celfix.technicians.manage')) {
             abort(403, 'Unauthorized action.');
         }
 
@@ -198,7 +198,7 @@ class TechnicianController extends Controller
 
     public function update(Request $request, $id)
     {
-        if (!auth()->user()->can('business_settings.access')) {
+        if (!auth()->user()->can('business_settings.access') && !auth()->user()->can('celfix.technicians.manage')) {
             abort(403, 'Unauthorized action.');
         }
 
@@ -233,7 +233,7 @@ class TechnicianController extends Controller
      */
     public function report(\Illuminate\Http\Request $request)
     {
-        if (!auth()->user()->can('business_settings.access') && !auth()->user()->can('view_purchase_n_sell_report')) {
+        if (!auth()->user()->can('business_settings.access') && !auth()->user()->can('view_purchase_n_sell_report') && !auth()->user()->can('celfix.technicians.report')) {
             abort(403, 'Unauthorized action.');
         }
 
@@ -531,7 +531,7 @@ class TechnicianController extends Controller
 
     public function exportReport(\Illuminate\Http\Request $request)
     {
-        if (!auth()->user()->can('business_settings.access') && !auth()->user()->can('view_purchase_n_sell_report')) {
+        if (!auth()->user()->can('business_settings.access') && !auth()->user()->can('view_purchase_n_sell_report') && !auth()->user()->can('celfix.technicians.report')) {
             abort(403, 'Unauthorized action.');
         }
 
@@ -577,7 +577,7 @@ class TechnicianController extends Controller
 
     public function destroy($id)
     {
-        if (!auth()->user()->can('business_settings.access')) {
+        if (!auth()->user()->can('business_settings.access') && !auth()->user()->can('celfix.technicians.manage')) {
             abort(403, 'Unauthorized action.');
         }
 
@@ -602,7 +602,7 @@ class TechnicianController extends Controller
      */
     public function updateCommissionOverride(\Illuminate\Http\Request $request, $line_id)
     {
-        if (!auth()->user()->can('business_settings.access')) {
+        if (!auth()->user()->can('business_settings.access') && !auth()->user()->can('celfix.technicians.manage')) {
             return response()->json(['success' => 0, 'msg' => 'No autorizado'], 403);
         }
 

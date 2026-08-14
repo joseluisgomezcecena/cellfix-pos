@@ -37,7 +37,8 @@ class WarrantyClaimController extends Controller
         $u = auth()->user();
         return $u->can('sell.create')
             || $u->can('direct_sell.access')
-            || $u->can('business_settings.access');
+            || $u->can('business_settings.access')
+            || $u->can('celfix.warranty.access');
     }
 
     public function index(Request $request)
@@ -623,6 +624,9 @@ class WarrantyClaimController extends Controller
                 if (empty($bd)) {
                     return 'Debes capturar el desglose de billetes para el reembolso en efectivo.';
                 }
+                $refund_amount = (float) $request->input('refund_amount');
+                [$ok, $msg] = \App\Utils\TransactionUtil::checkDenominationMatchesAmount($bd, $refund_amount);
+                if (!$ok) return $msg;
             }
         }
         if (in_array($type, ['replacement_higher', 'replacement_lower'])) {
@@ -635,6 +639,9 @@ class WarrantyClaimController extends Controller
                 if (empty($bd)) {
                     return 'Debes capturar el desglose de billetes para la diferencia en efectivo.';
                 }
+                $diff = abs((float) $request->input('price_difference'));
+                [$ok, $msg] = \App\Utils\TransactionUtil::checkDenominationMatchesAmount($bd, $diff);
+                if (!$ok) return $msg;
             }
         }
         return null;
@@ -690,7 +697,18 @@ class WarrantyClaimController extends Controller
             ->with(['contact', 'location', 'createdBy', 'originalSell'])
             ->findOrFail($id);
         $business = \App\Business::find($business_id);
-        return view('warranty_claim.ticket', compact('claim', 'business'));
+        // IMEIs: los equipos tienen su IMEI guardado como sub_sku de la variation.
+        // El original es el defectuoso que entrega el cliente; el replacement es el
+        // nuevo que sale del stock. Se muestran en el ticket bajo cada equipo.
+        $original_imei = null;
+        if ($claim->original_variation_id) {
+            $original_imei = Variation::where('id', $claim->original_variation_id)->value('sub_sku');
+        }
+        $replacement_imei = null;
+        if ($claim->replacement_variation_id) {
+            $replacement_imei = Variation::where('id', $claim->replacement_variation_id)->value('sub_sku');
+        }
+        return view('warranty_claim.ticket', compact('claim', 'business', 'original_imei', 'replacement_imei'));
     }
 
     public function cancel($id)

@@ -817,6 +817,7 @@ $(document).ready(function() {
             // olvidar abrir el modal MXN/USD. Antes el backend catcheaba pero al
             // hacer click en Guardar; ahora el toast sale antes.
             var missing_denom = false;
+            var mismatch_msg = null;
             $('#payment_rows_div .open-denominations-popup').css('border', ''); // reset visual
             $('#payment_rows_div .payment_row').each(function () {
                 var $row = $(this);
@@ -824,10 +825,11 @@ $(document).ready(function() {
                 var amount = __read_number($row.find('.payment-amount').first());
                 if (method === 'cash' && amount > 0) {
                     var bd = ($row.find('.denomination_breakdown_input').val() || '').trim();
+                    var parsed = null;
                     var ok = false;
                     if (bd) {
                         try {
-                            var parsed = JSON.parse(bd);
+                            parsed = JSON.parse(bd);
                             ok = parsed && (Object.keys(parsed).length > 0);
                         } catch (e) { ok = false; }
                     }
@@ -839,10 +841,45 @@ $(document).ready(function() {
                         missing_denom = true;
                         return false; // corta el .each
                     }
+                    // Suma del desglose debe cuadrar con el amount de la fila.
+                    // Cierra el hueco donde la cajera abría el modal, capturaba $500 y
+                    // después editaba manualmente el amount a $4,000 sin re-abrir el modal.
+                    var sum = 0;
+                    var walk = function (obj) {
+                        for (var k in obj) if (Object.prototype.hasOwnProperty.call(obj, k)) {
+                            if (k === 'coins') sum += parseFloat(obj[k]) || 0;
+                            else if (!isNaN(parseFloat(k))) sum += (parseInt(k, 10) || 0) * (parseInt(obj[k], 10) || 0);
+                        }
+                    };
+                    if (parsed.mxn || parsed.usd) {
+                        if (parsed.mxn) walk(parsed.mxn);
+                        if (parsed.usd_in_mxn) sum += parseFloat(parsed.usd_in_mxn) || 0;
+                        else if (parsed.usd && parsed.exchange_rate) {
+                            var usd_sum = 0;
+                            var save_sum = sum; sum = 0;
+                            walk(parsed.usd);
+                            usd_sum = sum;
+                            sum = save_sum + usd_sum * (parseFloat(parsed.exchange_rate) || 0);
+                        }
+                    } else {
+                        walk(parsed);
+                    }
+                    if (Math.abs(sum - amount) > 0.5) {
+                        mismatch_msg = 'El desglose de billetes suma $' + sum.toFixed(2)
+                            + ' pero el monto en efectivo es $' + amount.toFixed(2)
+                            + '. Abre el desglose y corrige.';
+                        var $btn2 = $row.find('.open-denominations-popup');
+                        if ($btn2.length) $btn2.css('border', '2px solid #d9534f').focus();
+                        return false;
+                    }
                 }
             });
             if (missing_denom) {
                 toastr.error('Falta el desglose de billetes en el pago en efectivo. Click en el botón "MXN/USD" del renglón y captura las denominaciones.');
+                return false;
+            }
+            if (mismatch_msg) {
+                toastr.error(mismatch_msg);
                 return false;
             }
 
@@ -852,13 +889,43 @@ $(document).ready(function() {
 
             //Ignore if the difference is less than 0.5
             if ($('input#in_balance_due').val() >= 0.5) {
-                cnf = confirm(LANG.paid_amount_is_less_than_payable);
-                // if( total_payble > total_paying ){
-                // 	cnf = confirm( LANG.paid_amount_is_less_than_payable );
-                // } else if(total_payble < total_paying) {
-                // 	alert( LANG.paid_amount_is_more_than_payable );
-                // 	cnf = false;
-                // }
+                // Casos legítimos donde el saldo pendiente es esperado y no debe bloquear:
+                //   - venta a crédito explícita (data-pay_method='credit_sale')
+                //   - venta suspendida
+                //   - recepción de reparación (queda con anticipo hasta que se entrega)
+                //   - apartado (layaway_id presente)
+                //   - borrador / cotización (status != 'final')
+                var isCreditSale = $('#is_credit_sale').val() == '1';
+                var isSuspend = $('input#is_suspend').val() == '1';
+                var isRepairReception = $('#repair_status').val() === 'pending';
+                var isLayaway = !!($('input[name="layaway_id"]').val() || $('#layaway_id').val());
+                var statusVal = $('input[name="status"]').val();
+                var isDraftOrQuote = statusVal && statusVal !== 'final';
+                var isLegitPartial = isCreditSale || isSuspend || isRepairReception || isLayaway || isDraftOrQuote;
+
+                if (!isLegitPartial) {
+                    // Bloqueo total para vendedores. Sin permiso de admin, esta venta
+                    // NO se cierra con saldo pendiente. Antes salía un confirm() feo
+                    // que se aceptaba por accidente y el cliente se llevaba el producto
+                    // sin pagar el total — patrón documentado en el análisis forense.
+                    var canCreditSale = $('#pos_can_credit_sale').val() === '1';
+                    var balance = parseFloat($('input#in_balance_due').val()) || 0;
+                    if (!canCreditSale) {
+                        toastr.error('No puedes finalizar esta venta con saldo pendiente de $'
+                            + balance.toFixed(2) + '. Cobra el total o pide a un admin que autorice la venta a crédito.');
+                        return false;
+                    }
+                    // Admin: confirmación fuerte (no el confirm nativo por sí solo,
+                    // pero al menos con contexto completo del monto pendiente).
+                    cnf = confirm(
+                        '⚠ ATENCIÓN: SALDO PENDIENTE\n\n'
+                        + 'Total: $' + (parseFloat($('input#final_total_input').val()) || 0).toFixed(2) + '\n'
+                        + 'Pagado: $' + (parseFloat($('input#total_paying_input').val()) || 0).toFixed(2) + '\n'
+                        + 'DEUDA que queda registrada: $' + balance.toFixed(2) + '\n\n'
+                        + 'El cliente se lleva el producto con esta deuda.\n'
+                        + '¿Confirmas registrar la venta a crédito?'
+                    );
+                }
             }
 
             var total_advance_payments = 0;
@@ -2180,6 +2247,12 @@ function reset_pos_form(){
 	$('#modal_payment').find('.remove_payment_row').each( function(){
 		$(this).closest('.payment_row').remove();
 	});
+
+	// Reset del bloqueo readonly aplicado por el modal cash. Sin esto, tras cobrar
+	// una venta cash y empezar la siguiente, el amount de la primera fila queda
+	// bloqueado con el background gris del cobro anterior.
+	$('#modal_payment .payment-amount').prop('readonly', false)
+		.removeAttr('title').css('background-color', '');
 
     if ($('#is_credit_sale').length) {
         $('#is_credit_sale').val(0);

@@ -422,10 +422,12 @@ class AdminSidebarMenu
                 )->order(30);
             }
 
-            // Garantías (Warranty Claims) — activo para todos los usuarios con permiso
-            // de crear ventas (vendedores + gerentes + admin). Los reembolsos generan
-            // gasto en el corte; los cambios de equipo NO cuentan como venta ni comisión.
-            if ($is_admin || auth()->user()->can('sell.create') || auth()->user()->can('direct_sell.access')) {
+            // Garantías (Warranty Claims). Se muestra si:
+            //   - Es admin/superadmin (retrocompat)
+            //   - Tiene permiso legacy sell.create o direct_sell.access
+            //   - O tiene el permiso Celfix específico celfix.warranty.access (nuevo)
+            if ($is_admin || auth()->user()->can('sell.create') || auth()->user()->can('direct_sell.access')
+                || auth()->user()->can('celfix.warranty.access')) {
                 $menu->dropdown(
                     'Garantías',
                     function ($sub) {
@@ -444,12 +446,17 @@ class AdminSidebarMenu
                 )->order(31);
             }
 
-            //Cortes Diarios dropdown
-            if (auth()->user()->can('business_settings.access') || auth()->user()->can('view_purchase_n_sell_report')) {
+            //Cortes Diarios dropdown — visible con permiso legacy o celfix.daily_cuts.view
+            $can_dc = auth()->user()->can('business_settings.access')
+                || auth()->user()->can('view_purchase_n_sell_report')
+                || auth()->user()->can('celfix.daily_cuts.view');
+            if ($can_dc) {
                 $menu->dropdown(
                     __('lang_v1.daily_cuts'),
                     function ($sub) {
-                        if (auth()->user()->can('business_settings.access') || auth()->user()->can('view_purchase_n_sell_report')) {
+                        if (auth()->user()->can('business_settings.access')
+                            || auth()->user()->can('view_purchase_n_sell_report')
+                            || auth()->user()->can('celfix.daily_cuts.view')) {
                             $sub->url(
                                 action([\App\Http\Controllers\DailyCutController::class, 'index']),
                                 __('lang_v1.daily_cuts'),
@@ -467,19 +474,30 @@ class AdminSidebarMenu
                 )->order(31);
             }
 
-            //Vendedores dropdown
-            if (auth()->user()->can('business_settings.access') || auth()->user()->can('view_purchase_n_sell_report')) {
+            //Vendedores dropdown. Subitem "Reporte semanal" también visible con
+            //celfix.vendors.weekly_report (vendedores puros verán solo su fila,
+            //controlado en el controller). "Metas y comisiones" con celfix.vendors.commissions.
+            $vr_can_see = auth()->user()->can('business_settings.access')
+                || auth()->user()->can('view_purchase_n_sell_report')
+                || auth()->user()->can('sell.create')
+                || auth()->user()->can('celfix.vendors.weekly_report')
+                || auth()->user()->can('celfix.vendors.commissions');
+            if ($vr_can_see) {
                 $menu->dropdown(
                     'Vendedores',
                     function ($sub) {
-                        if (auth()->user()->can('business_settings.access') || auth()->user()->can('view_purchase_n_sell_report')) {
+                        if (auth()->user()->can('business_settings.access')
+                            || auth()->user()->can('view_purchase_n_sell_report')
+                            || auth()->user()->can('sell.create')
+                            || auth()->user()->can('celfix.vendors.weekly_report')) {
                             $sub->url(
                                 action([\App\Http\Controllers\VendorReportController::class, 'weekly']),
                                 __('lang_v1.vendors_weekly_report'),
                                 ['icon' => '', 'active' => request()->segment(1) == 'vendor-reports']
                             );
                         }
-                        if (auth()->user()->can('business_settings.access')) {
+                        if (auth()->user()->can('business_settings.access')
+                            || auth()->user()->can('celfix.vendors.commissions')) {
                             $sub->url(
                                 action([\App\Http\Controllers\CommissionTargetController::class, 'index']),
                                 __('lang_v1.commission_targets'),
@@ -497,26 +515,35 @@ class AdminSidebarMenu
                 )->order(32);
             }
 
-            //Técnicos dropdown
-            if (auth()->user()->can('business_settings.access') || auth()->user()->can('view_purchase_n_sell_report')) {
+            //Técnicos dropdown — cada subitem tiene su permiso Celfix específico.
+            $tech_can_see = auth()->user()->can('business_settings.access')
+                || auth()->user()->can('view_purchase_n_sell_report')
+                || auth()->user()->can('celfix.technicians.manage')
+                || auth()->user()->can('celfix.technicians.report')
+                || auth()->user()->can('celfix.technicians.repair_orders');
+            if ($tech_can_see) {
                 $menu->dropdown(
                     __('lang_v1.technicians'),
                     function ($sub) {
-                        if (auth()->user()->can('business_settings.access')) {
+                        if (auth()->user()->can('business_settings.access')
+                            || auth()->user()->can('celfix.technicians.manage')) {
                             $sub->url(
                                 action([\App\Http\Controllers\TechnicianController::class, 'index']),
                                 __('lang_v1.technicians'),
                                 ['icon' => '', 'active' => request()->segment(1) == 'technicians' && request()->segment(2) == null]
                             );
                         }
-                        if (auth()->user()->can('business_settings.access') || auth()->user()->can('view_purchase_n_sell_report')) {
+                        if (auth()->user()->can('business_settings.access')
+                            || auth()->user()->can('view_purchase_n_sell_report')
+                            || auth()->user()->can('celfix.technicians.report')) {
                             $sub->url(
                                 action([\App\Http\Controllers\TechnicianController::class, 'report']),
                                 __('lang_v1.technicians_report'),
                                 ['icon' => '', 'active' => request()->segment(1) == 'technicians' && request()->segment(2) == 'report']
                             );
                         }
-                        if (auth()->user()->can('business_settings.access')) {
+                        if (auth()->user()->can('business_settings.access')
+                            || auth()->user()->can('celfix.technicians.repair_orders')) {
                             $sub->url(
                                 action([\App\Http\Controllers\RepairOrderController::class, 'adminIndex']),
                                 'Administrar Reparaciones',

@@ -48,6 +48,12 @@
                     @endif
                 @endif
 
+                {{-- Indicador para el JS: quién puede cerrar una venta con saldo pendiente.
+                     Los vendedores comunes NO pueden (bloqueo total contra fraude/olvido);
+                     los gerentes con business_settings.access sí, con confirmación fuerte. --}}
+                <input type="hidden" id="pos_can_credit_sale"
+                    value="{{ auth()->user()->can('business_settings.access') || auth()->user()->can('superadmin') ? '1' : '0' }}">
+
                 {{-- Recepción de reparación (orden en 2 pasos: recibir → entregar) --}}
                 <input type="hidden" name="repair_status" id="repair_status" value="">
                 @if (empty($edit))

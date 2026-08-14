@@ -7,6 +7,25 @@
  */
 $(document).ready(function () {
 
+    // Al cargar la página (incluye vista de EDITAR venta): cualquier fila cash
+    // con desglose ya capturado queda con amount readonly. Sin esto, al editar
+    // una venta existente el cajero podía tipear encima del amount cash sin
+    // re-capturar billetes.
+    function lockExistingCashRows() {
+        $('#payment_rows_div .payment_row').each(function () {
+            var $row = $(this);
+            var method = $row.find('.payment_types_dropdown').val();
+            if (method !== 'cash') return;
+            var bd = ($row.find('.denomination_breakdown_input').val() || '').trim();
+            if (!bd) return;
+            $row.find('.payment-amount').first()
+                .prop('readonly', true)
+                .attr('title', 'Para cambiar el monto, abre el desglose MXN/USD de nuevo')
+                .css('background-color', '#f1f3f5');
+        });
+    }
+    lockExistingCashRows();
+
     // Bootstrap 3 doesn't auto-stack modals. When a 2nd modal opens on top of
     // another (e.g. cash modal opening from inside the multi-payment modal),
     // it gets a lower z-index and ends up behind. This bumps it above.
@@ -199,13 +218,21 @@ $(document).ready(function () {
 
     // Show/hide the per-row denominations button based on method
     $(document).on('change', '.payment_types_dropdown', function () {
-        var btn = $(this).closest('.payment_row').find('.open-denominations-popup');
+        var $row = $(this).closest('.payment_row');
+        var btn = $row.find('.open-denominations-popup');
+        var $amtInput = $row.find('.payment-amount').first();
         if ($(this).val() === 'cash') {
             btn.removeClass('hide');
         } else {
             btn.addClass('hide');
             // Clear breakdown if switching away from cash
-            $(this).closest('.payment_row').find('.denomination_breakdown_input').val('');
+            $row.find('.denomination_breakdown_input').val('');
+            // Restaurar amount editable: al salir de cash, el desglose deja de aplicar
+            // y el usuario debe poder tipear libremente el monto (tarjeta, transferencia,
+            // etc. no tienen desglose).
+            $amtInput.prop('readonly', false)
+                .removeAttr('title')
+                .css('background-color', '');
         }
     });
 
@@ -304,8 +331,17 @@ $(document).ready(function () {
 
         // -------- Multi-payment row mode: just fill the row and close --------
         if (cashModalTargetRow && cashModalTargetRow.length) {
-            __write_number(cashModalTargetRow.find('.payment-amount').first(), total_received);
-            cashModalTargetRow.find('.payment-amount').first().trigger('change');
+            var $amtInput = cashModalTargetRow.find('.payment-amount').first();
+            __write_number($amtInput, total_received);
+            $amtInput.trigger('change');
+
+            // Bloqueo del input amount cuando ya se capturó desglose: evita el bypass
+            // donde el cajero tipeaba $4,000 encima del $500 escrito por el modal.
+            // Para modificar debe re-abrir el modal (recaptura billetes) o cambiar el
+            // método a algo distinto de cash — ambos limpian el bloqueo.
+            $amtInput.prop('readonly', true)
+                .attr('title', 'Para cambiar el monto, abre el desglose MXN/USD de nuevo')
+                .css('background-color', '#f1f3f5');
 
             // Save breakdown to the row's hidden input
             cashModalTargetRow.find('.denomination_breakdown_input').val(
@@ -335,6 +371,12 @@ $(document).ready(function () {
         // change_return entry below, so net paid = total_received - change.
         writeFirstPaymentRow('cash', total_received);
         writeDenominations(denominations);
+        // Mismo bloqueo que en multi-pago: sin readonly, el cajero podría tipear
+        // encima del amount escrito por el modal (bypass documentado).
+        var $mainAmtInput = $('#payment_rows_div .payment_row').first().find('.payment-amount').first();
+        $mainAmtInput.prop('readonly', true)
+            .attr('title', 'Para cambiar el monto, abre el desglose MXN/USD de nuevo')
+            .css('background-color', '#f1f3f5');
 
         // Save denomination breakdown as JSON in a hidden input that the
         // backend reads to persist into transaction_payments.denomination_breakdown

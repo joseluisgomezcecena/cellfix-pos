@@ -230,8 +230,9 @@ class DashCategoriasSheet implements FromArray, WithTitle, WithEvents
         $header[] = 'TOTAL';
         $this->lastCol = $this->col(count($header));
         $rows = [$header];
+        $always_show = ['HIDROGEL', 'CORTOS'];
         foreach ($d['buckets'] as $bname => $bd) {
-            if ($bd['qty'] <= 0) {
+            if ($bd['qty'] <= 0 && ! in_array($bname, $always_show)) {
                 continue;
             }
             $row = [$bname];
@@ -279,8 +280,9 @@ class DashResumenSheet implements FromArray, WithTitle, WithEvents
     {
         $rows = [['CATEGORIA', 'CANTIDAD', 'TOTAL $']];
         $gq = 0; $ga = 0;
+        $always_show = ['HIDROGEL', 'CORTOS'];
         foreach ($this->data['buckets'] as $bname => $bd) {
-            if ($bd['qty'] <= 0 && $bd['amount'] <= 0) {
+            if ($bd['qty'] <= 0 && $bd['amount'] <= 0 && ! in_array($bname, $always_show)) {
                 continue;
             }
             $rows[] = [$bname, (int) $bd['qty'], round($bd['amount'], 2)];

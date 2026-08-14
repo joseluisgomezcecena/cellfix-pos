@@ -456,6 +456,7 @@ Route::middleware(['setData', 'auth', 'SetSessionData', 'language', 'timezone', 
     Route::get('/repair-orders/admin', [\App\Http\Controllers\RepairOrderController::class, 'adminIndex'])->name('repair-orders.admin');
     Route::get('/repair-orders/admin/search', [\App\Http\Controllers\RepairOrderController::class, 'adminSearch'])->name('repair-orders.admin-search');
     Route::post('/repair-orders/{id}/change-technician', [\App\Http\Controllers\RepairOrderController::class, 'changeTechnician'])->name('repair-orders.change-technician');
+    Route::get('/repair-orders/{id}/lines', [\App\Http\Controllers\RepairOrderController::class, 'repairLines'])->name('repair-orders.lines');
 
     Route::get('/exchange-rate', [\App\Http\Controllers\ExchangeRateController::class, 'edit'])->name('exchange-rate.edit');
     Route::post('/exchange-rate', [\App\Http\Controllers\ExchangeRateController::class, 'update'])->name('exchange-rate.update');
@@ -463,6 +464,7 @@ Route::middleware(['setData', 'auth', 'SetSessionData', 'language', 'timezone', 
     Route::get('/daily-cuts', [\App\Http\Controllers\DailyCutController::class, 'index'])->name('daily-cuts.index');
     Route::get('/daily-cuts/weekly', [\App\Http\Controllers\DailyCutController::class, 'weekly'])->name('daily-cuts.weekly');
     Route::get('/daily-cuts/denominations', [\App\Http\Controllers\DailyCutController::class, 'denominations'])->name('daily-cuts.denominations');
+    Route::post('/daily-cuts/vendor-counts', [\App\Http\Controllers\DailyCutController::class, 'saveVendorCounts'])->name('daily-cuts.vendor-counts');
     Route::get('/daily-cuts/export', [\App\Http\Controllers\DailyCutController::class, 'export'])->name('daily-cuts.export');
     Route::get('/daily-cuts/export-weekly', [\App\Http\Controllers\DailyCutController::class, 'exportWeekly'])->name('daily-cuts.export-weekly');
     Route::post('/daily-cuts/generate', [\App\Http\Controllers\DailyCutController::class, 'generate'])->name('daily-cuts.generate');

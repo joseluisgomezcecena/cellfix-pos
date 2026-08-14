@@ -81,6 +81,25 @@ class TransactionPaymentController extends Controller
                 $inputs['created_by'] = auth()->user()->id;
                 $inputs['payment_for'] = $transaction->contact_id;
 
+                // Mismo check que update: si el pago nuevo es cash, exigir desglose
+                // que sume igual al amount. Aplica al flujo "Agregar pago" desde
+                // la vista de una venta con saldo pendiente.
+                $new_method = $inputs['method'] ?? null;
+                $new_amount = (float) $inputs['amount'];
+                if ($new_method === 'cash' && $new_amount > 0) {
+                    $denom_in = $request->input('denominations');
+                    if (empty($denom_in) || !is_array($denom_in)) {
+                        return redirect()->back()->with(['status' => [
+                            'success' => false,
+                            'msg' => 'Debes capturar el desglose de billetes para el pago en efectivo.',
+                        ]]);
+                    }
+                    [$ok, $msg] = \App\Utils\TransactionUtil::checkDenominationMatchesAmount($denom_in, $new_amount);
+                    if (!$ok) {
+                        return redirect()->back()->with(['status' => ['success' => false, 'msg' => $msg]]);
+                    }
+                }
+
                 if ($inputs['method'] == 'custom_pay_1') {
                     $inputs['transaction_no'] = $request->input('transaction_no_1');
                 } elseif ($inputs['method'] == 'custom_pay_2') {
@@ -243,6 +262,26 @@ class TransactionPaymentController extends Controller
                 'cheque_number', 'bank_account_number', ]);
             $inputs['paid_on'] = $this->transactionUtil->uf_date($request->input('paid_on'), true);
             $inputs['amount'] = $this->transactionUtil->num_uf($inputs['amount']);
+
+            // Cierra el hueco donde se editaba SOLO el amount del pago cash desde
+            // /payments/{id}/edit sin actualizar las denominaciones — el amount
+            // subía a $4,000 pero el desglose seguía marcando $500. Este endpoint
+            // es independiente del /sells/{id} y no pasaba por la validación del POS.
+            $edited_method = $inputs['method'] ?? null;
+            $edited_amount = (float) $inputs['amount'];
+            if ($edited_method === 'cash' && $edited_amount > 0) {
+                $denom_in = $request->input('denominations');
+                if (empty($denom_in) || !is_array($denom_in)) {
+                    return redirect()->back()->with(['status' => [
+                        'success' => false,
+                        'msg' => 'Debes capturar el desglose de billetes para el pago en efectivo antes de editarlo.',
+                    ]]);
+                }
+                [$ok, $msg] = \App\Utils\TransactionUtil::checkDenominationMatchesAmount($denom_in, $edited_amount);
+                if (!$ok) {
+                    return redirect()->back()->with(['status' => ['success' => false, 'msg' => $msg]]);
+                }
+            }
 
             if ($inputs['method'] == 'custom_pay_1') {
                 $inputs['transaction_no'] = $request->input('transaction_no_1');

@@ -70,31 +70,139 @@ class DailyCutUtil
         $total_sales = $sales->sum('final_total');
         $total_transactions = $sales->count();
 
-        // ---- Sales by brand (Reparaciones, Servicios, Equipos, Accesorios, Desbloqueos, etc.) ----
-        $sales_by_brand = [];
+        // ---- Sales by category buckets ----
+        // Antes agrupábamos por p.brand_id crudo, lo que hacía que "Corto" apareciera
+        // como su propia línea pero se mezclara con OTROS, y que HIDROGEL (que es
+        // categoría, no brand) se sumara silenciosamente a VT. Ahora usamos los mismos
+        // buckets que el sales-dashboard: EQUIPOS, ACCESORIOS, VT, HIDROGEL, CORTOS,
+        // REPARACIONES, SERVICIOS, DESBLOQUEOS, OTROS. Y HIDROGEL siempre aparece
+        // (aunque tenga 0) para que el gerente pueda ver la separación explícita.
+        // Buckets fijos históricos. Las brands creadas después de $new_brand_cutoff
+        // que no matcheen con ninguno de estos aparecen como su propio bucket con
+        // el nombre real de la brand (en mayúsculas). Ajusta la fecha si necesitas
+        // que brands viejas también salgan solas.
+        $new_brand_cutoff = '2026-08-13';
+        $bucket_order = ['EQUIPOS', 'ACCESORIOS', 'VT', 'HIDROGEL', 'CORTOS', 'REPARACIONES', 'SERVICIOS', 'DESBLOQUEOS'];
+        $always_show = ['HIDROGEL', 'CORTOS'];
+        $buckets = [];
+        foreach ($bucket_order as $b) {
+            $buckets[$b] = ['brand' => $b, 'quantity' => 0.0, 'subtotal' => 0.0];
+        }
+        // OTROS va al final (después de las brands nuevas dinámicas).
+
         if (!empty($sale_ids)) {
-            $by_brand = DB::table('transaction_sell_lines as tsl')
+            // Todos los brand lookups usan arrays + in_array porque en la BD real hay
+            // duplicados por typos (ej. "Hidrogel" id=109 y "HIdrogel" id=105 con I mayúscula).
+            // Si tomáramos solo el primero perderíamos las ventas de las demás variantes.
+            $brandIds = function ($names) use ($business_id) {
+                return DB::table('brands')->where('business_id', $business_id)
+                    ->whereIn(DB::raw('LOWER(name)'), array_map('strtolower', $names))
+                    ->pluck('id')->toArray();
+            };
+            $brands_equipos      = array_flip($brandIds(['Equipos', 'Equipo']));
+            $brands_accesorios   = array_flip($brandIds(['Accesorios']));
+            $brands_reparaciones = array_flip($brandIds(['Reparaciones', 'Reparacion']));
+            $brands_servicios    = array_flip($brandIds(['Servicios', 'Servicio']));
+            $brands_desbloqueos  = array_flip($brandIds(['Desbloqueos', 'Desbloqueo']));
+            $brands_cortos       = array_flip($brandIds(['Corto', 'Cortos']));
+            $brands_hidrogel     = array_flip($brandIds(['Hidrogel']));
+            $brands_vidrio       = array_flip($brandIds(['Vidrio Templado', 'VT']));
+
+            // Brands nuevas (creadas ≥ cutoff): map brand_id => 'NOMBRE UPPER'.
+            $new_brand_labels = DB::table('brands')->where('business_id', $business_id)
+                ->where('created_at', '>=', $new_brand_cutoff)
+                ->pluck('name', 'id')
+                ->map(fn ($n) => mb_strtoupper($n))
+                ->toArray();
+
+            $treeIds = function ($rootName) use ($business_id) {
+                $root = DB::table('categories')->where('business_id', $business_id)
+                    ->whereRaw('LOWER(name)=?', [strtolower($rootName)])->value('id');
+                if (!$root) return [];
+                $ids = [$root]; $queue = [$root];
+                while ($queue) {
+                    $p = array_shift($queue);
+                    foreach (DB::table('categories')->where('parent_id', $p)->pluck('id') as $k) {
+                        $ids[] = $k; $queue[] = $k;
+                    }
+                }
+                return array_unique($ids);
+            };
+            $vt_cats = $treeIds('VT');
+            $hidrogel_cats = $treeIds('Hidrogel');
+            $vt_only = array_flip(array_diff($vt_cats, $hidrogel_cats));
+            $hg = array_flip($hidrogel_cats);
+
+            $lines = DB::table('transaction_sell_lines as tsl')
                 ->join('products as p', 'p.id', '=', 'tsl.product_id')
-                ->leftJoin('brands as b', 'b.id', '=', 'p.brand_id')
                 ->whereIn('tsl.transaction_id', $sale_ids)
-                ->groupBy('b.id', 'b.name')
                 ->select(
-                    'b.name as brand_name',
+                    'p.brand_id', 'p.category_id',
                     DB::raw('COALESCE(SUM(tsl.quantity), 0) as quantity'),
                     // unit_price_inc_tax ya incluye el descuento de línea (UltimatePOS lo guarda
                     // post-descuento). Restar line_discount_amount otra vez doble-contaba el
                     // descuento y bajaba los subtotales por marca cuando había descuento.
                     DB::raw('COALESCE(SUM(tsl.unit_price_inc_tax * tsl.quantity), 0) as subtotal')
                 )
+                ->groupBy('p.brand_id', 'p.category_id')
                 ->get();
 
-            foreach ($by_brand as $row) {
-                $sales_by_brand[] = [
-                    'brand' => $row->brand_name ?? 'Sin marca',
-                    'quantity' => (float) $row->quantity,
-                    'subtotal' => (float) $row->subtotal,
-                ];
+            foreach ($lines as $r) {
+                $bucket = null;
+                if (isset($brands_equipos[$r->brand_id]))            $bucket = 'EQUIPOS';
+                elseif (isset($brands_reparaciones[$r->brand_id]))   $bucket = 'REPARACIONES';
+                elseif (isset($brands_servicios[$r->brand_id]))      $bucket = 'SERVICIOS';
+                elseif (isset($brands_desbloqueos[$r->brand_id]))    $bucket = 'DESBLOQUEOS';
+                elseif (isset($brands_cortos[$r->brand_id]))         $bucket = 'CORTOS';
+                // HIDROGEL prioriza brand explícita antes que categoría (los productos
+                // hidrogel del catálogo actual tienen cat=VT root, no la subcat "Hidrogel").
+                elseif (isset($brands_hidrogel[$r->brand_id]))       $bucket = 'HIDROGEL';
+                elseif (isset($hg[$r->category_id]))                 $bucket = 'HIDROGEL';
+                elseif (isset($brands_vidrio[$r->brand_id]))         $bucket = 'VT';
+                elseif (isset($vt_only[$r->category_id]))            $bucket = 'VT';
+                elseif (isset($brands_accesorios[$r->brand_id]))     $bucket = 'ACCESORIOS';
+                // Brand nueva (creada ≥ cutoff) que no encaja en ninguno de los buckets
+                // conceptuales: aparece como su propia línea con el nombre real de la brand.
+                elseif (isset($new_brand_labels[$r->brand_id])) {
+                    $bucket = $new_brand_labels[$r->brand_id];
+                    if (!isset($buckets[$bucket])) {
+                        $buckets[$bucket] = ['brand' => $bucket, 'quantity' => 0.0, 'subtotal' => 0.0];
+                    }
+                }
+                else $bucket = 'OTROS';
+                if (!isset($buckets[$bucket])) {
+                    $buckets[$bucket] = ['brand' => $bucket, 'quantity' => 0.0, 'subtotal' => 0.0];
+                }
+                $buckets[$bucket]['quantity'] += (float) $r->quantity;
+                $buckets[$bucket]['subtotal'] += (float) $r->subtotal;
             }
+        }
+
+        // Aseguramos que OTROS exista (para las brands viejas sin clasificar)
+        if (!isset($buckets['OTROS'])) {
+            $buckets['OTROS'] = ['brand' => 'OTROS', 'quantity' => 0.0, 'subtotal' => 0.0];
+        }
+
+        // Emitir buckets con movimiento + los "always_show" (HIDROGEL, CORTOS).
+        // Orden: los conceptuales primero, luego las brands nuevas (alfabético), OTROS al final.
+        $known = ['EQUIPOS', 'ACCESORIOS', 'VT', 'HIDROGEL', 'CORTOS', 'REPARACIONES', 'SERVICIOS', 'DESBLOQUEOS'];
+        $sales_by_brand = [];
+        foreach ($known as $name) {
+            if (isset($buckets[$name]) && ($buckets[$name]['quantity'] > 0 || $buckets[$name]['subtotal'] > 0 || in_array($name, $always_show))) {
+                $sales_by_brand[] = $buckets[$name];
+            }
+        }
+        // Brands nuevas (dinámicas), ordenadas alfabéticamente
+        $new_names = array_diff(array_keys($buckets), array_merge($known, ['OTROS']));
+        sort($new_names);
+        foreach ($new_names as $name) {
+            if ($buckets[$name]['quantity'] > 0 || $buckets[$name]['subtotal'] > 0) {
+                $sales_by_brand[] = $buckets[$name];
+            }
+        }
+        // OTROS al final si tiene ventas
+        if ($buckets['OTROS']['quantity'] > 0 || $buckets['OTROS']['subtotal'] > 0) {
+            $sales_by_brand[] = $buckets['OTROS'];
         }
 
         // ---- Payments breakdown ----

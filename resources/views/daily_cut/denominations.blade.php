@@ -97,10 +97,24 @@
                 </thead>
                 <tbody>
                     @foreach($rows as $row)
+                        @php $date_key = $row['date']->toDateString(); $vc = ($vendor_counts_by_date ?? [])[$date_key] ?? null; @endphp
                         <tr>
-                            <td class="day-cell">
+                            <td class="day-cell" @if(!empty($location_id)) rowspan="2" @endif>
                                 {{ $row['day_name'] }}
                                 <br><small>{{ $row['date']->format('d/m/Y') }}</small>
+                                @if(!empty($location_id))
+                                    <br>
+                                    <button type="button" class="btn btn-xs btn-primary vc-save-btn" style="margin-top:5px;"
+                                        data-date="{{ $date_key }}"
+                                        data-location="{{ $location_id }}">
+                                        <i class="fas fa-save"></i> Guardar cajero
+                                    </button>
+                                    @if($vc)
+                                        <br><small class="text-muted" style="font-size:10px;">
+                                            Últ. captura: {{ $vc->updated_at ? $vc->updated_at->format('d/m H:i') : '' }}
+                                        </small>
+                                    @endif
+                                @endif
                             </td>
                             @foreach($mxn_faces as $face)
                                 <td class="text-center">{{ $row['mxn_faces'][$face] ?: '' }}</td>
@@ -143,6 +157,62 @@
                                 <span class="display_currency" data-currency_symbol="true">{{ $row['total_dinero'] }}</span>
                             </td>
                         </tr>
+                        {{-- FILA CAJERO: inputs manuales para que el cajero capture su conteo físico.
+                             Solo visible cuando hay sucursal filtrada (sin sucursal no tiene sentido). --}}
+                        @if(!empty($location_id))
+                            <tr class="vc-row" data-date="{{ $date_key }}" style="background-color:#fffbe6;">
+                                @foreach($mxn_faces as $face)
+                                    <td class="text-center">
+                                        <input type="number" min="0" step="1"
+                                            class="form-control input-sm vc-mxn text-center"
+                                            data-currency="mxn" data-face="{{ $face }}"
+                                            placeholder="0" style="width:60px; padding:2px; font-size:11px;"
+                                            value="{{ $vc && isset($vc->mxn_counts[$face]) ? $vc->mxn_counts[$face] : '' }}">
+                                    </td>
+                                @endforeach
+                                <td class="text-right">
+                                    <input type="number" min="0" step="0.01"
+                                        class="form-control input-sm vc-mxn-coins text-right"
+                                        placeholder="0.00" style="width:80px; padding:2px; font-size:11px;"
+                                        value="{{ $vc && $vc->mxn_coins > 0 ? $vc->mxn_coins : '' }}">
+                                </td>
+                                <td class="text-right group-mxn vc-mxn-subtotal" style="font-weight:bold;">$0.00</td>
+                                @foreach($usd_faces as $face)
+                                    <td class="text-center">
+                                        <input type="number" min="0" step="1"
+                                            class="form-control input-sm vc-usd text-center"
+                                            data-currency="usd" data-face="{{ $face }}"
+                                            placeholder="0" style="width:55px; padding:2px; font-size:11px;"
+                                            value="{{ $vc && isset($vc->usd_counts[$face]) ? $vc->usd_counts[$face] : '' }}">
+                                    </td>
+                                @endforeach
+                                <td class="text-right">
+                                    <input type="number" min="0" step="0.01"
+                                        class="form-control input-sm vc-usd-coins text-right"
+                                        placeholder="0.00" style="width:70px; padding:2px; font-size:11px;"
+                                        value="{{ $vc && $vc->usd_coins > 0 ? $vc->usd_coins : '' }}">
+                                </td>
+                                <td class="text-right group-usd vc-usd-subtotal" style="font-weight:bold;">$0.00</td>
+                                <td class="text-right group-usd vc-usd-mxn">
+                                    <input type="number" min="0" step="0.01"
+                                        class="form-control input-sm vc-rate text-right"
+                                        placeholder="rate" style="width:70px; padding:2px; font-size:11px;"
+                                        value="{{ $vc && $vc->usd_exchange_rate ? $vc->usd_exchange_rate : '' }}">
+                                </td>
+                                {{-- El resto de columnas no aplican al conteo de billetes (cambio,
+                                     total_card, terminals, transfer, cheque). Mostramos el TOTAL
+                                     CAJERO en la última columna para comparar con TOTAL DINERO del sistema. --}}
+                                <td></td>
+                                <td class="text-right total-cell vc-total-cash" style="font-weight:bold; color:#2e7d32;">$0.00</td>
+                                <td></td>
+                                @foreach($terminal_names as $name)<td></td>@endforeach
+                                <td></td>
+                                <td></td>
+                                <td class="text-right" style="background-color:#c8e6c9; font-weight:bold; color:#1b5e20;">
+                                    <small>TOTAL<br>CAJERO</small>
+                                </td>
+                            </tr>
+                        @endif
                     @endforeach
                 </tbody>
                 <tfoot>
@@ -263,6 +333,73 @@ $(document).ready(function () {
     $('.sat-only-datepicker').datepicker({
         format: 'yyyy-mm-dd', autoclose: true, todayHighlight: true,
         weekStart: 6, daysOfWeekDisabled: [0,1,2,3,4,5]
+    });
+
+    // Recalcula subtotales de la fila del cajero en vivo mientras escribe
+    function recalcRow($row) {
+        var mxn = 0;
+        $row.find('.vc-mxn').each(function () {
+            mxn += (parseInt($(this).data('face'), 10) || 0) * (parseInt($(this).val(), 10) || 0);
+        });
+        mxn += parseFloat($row.find('.vc-mxn-coins').val()) || 0;
+        var usd = 0;
+        $row.find('.vc-usd').each(function () {
+            usd += (parseInt($(this).data('face'), 10) || 0) * (parseInt($(this).val(), 10) || 0);
+        });
+        usd += parseFloat($row.find('.vc-usd-coins').val()) || 0;
+        var rate = parseFloat($row.find('.vc-rate').val()) || 0;
+        var total = mxn + (usd * rate);
+        $row.find('.vc-mxn-subtotal').text('$' + mxn.toFixed(2));
+        $row.find('.vc-usd-subtotal').text('$' + usd.toFixed(2));
+        $row.find('.vc-total-cash').text('$' + total.toFixed(2));
+    }
+    // Init subtotales al cargar la página
+    $('.vc-row').each(function () { recalcRow($(this)); });
+    // Recalcular al cambio
+    $(document).on('input change', '.vc-row .vc-mxn, .vc-row .vc-usd, .vc-row .vc-mxn-coins, .vc-row .vc-usd-coins, .vc-row .vc-rate', function () {
+        recalcRow($(this).closest('.vc-row'));
+    });
+
+    // Guardar conteo del cajero de un día
+    $(document).on('click', '.vc-save-btn', function () {
+        var $btn = $(this);
+        var date = $btn.data('date');
+        var location_id = $btn.data('location');
+        var $row = $('.vc-row[data-date="' + date + '"]');
+        var mxn_counts = {};
+        $row.find('.vc-mxn').each(function () {
+            var v = parseInt($(this).val(), 10) || 0;
+            if (v > 0) mxn_counts[$(this).data('face')] = v;
+        });
+        var usd_counts = {};
+        $row.find('.vc-usd').each(function () {
+            var v = parseInt($(this).val(), 10) || 0;
+            if (v > 0) usd_counts[$(this).data('face')] = v;
+        });
+        $btn.prop('disabled', true).find('i').removeClass('fa-save').addClass('fa-spinner fa-spin');
+        $.ajax({
+            url: '{{ route("daily-cuts.vendor-counts") }}',
+            method: 'POST',
+            data: {
+                _token: '{{ csrf_token() }}',
+                location_id: location_id,
+                cut_date: date,
+                mxn_counts: mxn_counts,
+                mxn_coins: parseFloat($row.find('.vc-mxn-coins').val()) || 0,
+                usd_counts: usd_counts,
+                usd_coins: parseFloat($row.find('.vc-usd-coins').val()) || 0,
+                usd_exchange_rate: parseFloat($row.find('.vc-rate').val()) || null,
+            },
+            dataType: 'json',
+            success: function (r) {
+                if (r && r.success == 1) toastr.success(r.msg || 'Guardado.');
+                else toastr.error((r && r.msg) || 'Error al guardar.');
+            },
+            error: function () { toastr.error('Error al guardar.'); },
+            complete: function () {
+                $btn.prop('disabled', false).find('i').removeClass('fa-spinner fa-spin').addClass('fa-save');
+            }
+        });
     });
 });
 </script>

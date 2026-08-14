@@ -17,7 +17,13 @@ class VendorReportController extends Controller
      */
     public function weekly(Request $request)
     {
-        if (!auth()->user()->can('business_settings.access') && !auth()->user()->can('view_purchase_n_sell_report')) {
+        // Los vendedores (con sell.create) también pueden ver este reporte pero
+        // solo su propia fila. Admins/gerentes ven todos los vendedores.
+        $is_admin = auth()->user()->can('business_settings.access')
+            || auth()->user()->can('view_purchase_n_sell_report')
+            || auth()->user()->can('celfix.vendors.weekly_report');
+        $can_view_own = auth()->user()->can('sell.create');
+        if (!$is_admin && !$can_view_own) {
             abort(403, 'Unauthorized action.');
         }
 
@@ -38,12 +44,17 @@ class VendorReportController extends Controller
         // Normaliza: vacío o 0 = todas
         $location_id = (!empty($location_id) && (int) $location_id > 0) ? (int) $location_id : null;
 
-        $data = $this->buildReportData($business_id, $start, $end, $location_id);
+        // Vendedor sin permiso admin: forzar filtro por su propio user_id, ignorando
+        // cualquier ?user_id= manipulado en el URL. Así solo puede verse a sí mismo.
+        $only_user_id = $is_admin ? null : auth()->id();
+
+        $data = $this->buildReportData($business_id, $start, $end, $location_id, $only_user_id);
 
         $locations = BusinessLocation::forDropdown($business_id);
+        $is_vendor_only = !$is_admin;
 
         return view('vendor_report.weekly', compact(
-            'data', 'start_date', 'start', 'end', 'locations', 'location_id'
+            'data', 'start_date', 'start', 'end', 'locations', 'location_id', 'is_vendor_only'
         ));
     }
 
@@ -56,7 +67,7 @@ class VendorReportController extends Controller
      *   - day_labels: short labels for each day
      *   - totals: combined matrix across all vendors
      */
-    public function buildReportData($business_id, $start, $end, $location_id = null)
+    public function buildReportData($business_id, $start, $end, $location_id = null, $only_user_id = null)
     {
         // 7 days from $start
         $days = [];
@@ -83,6 +94,7 @@ class VendorReportController extends Controller
             ->whereHas('roles', function ($q) use ($vendor_role_names) {
                 $q->whereIn('name', $vendor_role_names);
             })
+            ->when($only_user_id, fn ($q) => $q->where('id', $only_user_id))
             ->orderBy('first_name')
             ->orderBy('last_name')
             ->get();
@@ -145,6 +157,17 @@ class VendorReportController extends Controller
 
         if (!empty($location_id)) {
             $query->where('t.location_id', $location_id);
+        }
+
+        // Vendedor sin permiso admin: filtrar por su propio user_id. Se aplica al
+        // "created_by efectivo" (que ya considera liquidador de apartado, receptor
+        // de reparación, o creador de venta normal). Usa whereRaw con la misma
+        // expresión que el SELECT — HAVING sin GROUP BY es non-standard.
+        if (!empty($only_user_id)) {
+            $query->whereRaw(
+                'IF(t.layaway_id IS NOT NULL, (SELECT lp.processed_by FROM layaway_payments lp WHERE lp.layaway_id = t.layaway_id ORDER BY lp.id DESC LIMIT 1), t.created_by) = ?',
+                [$only_user_id]
+            );
         }
 
         $lines = $query->get();
@@ -295,7 +318,12 @@ class VendorReportController extends Controller
      */
     public function exportWeekly(Request $request)
     {
-        if (!auth()->user()->can('business_settings.access') && !auth()->user()->can('view_purchase_n_sell_report')) {
+        // Mismo criterio de acceso que weekly(): admins ven todo, vendedores solo lo suyo.
+        $is_admin = auth()->user()->can('business_settings.access')
+            || auth()->user()->can('view_purchase_n_sell_report')
+            || auth()->user()->can('celfix.vendors.weekly_report');
+        $can_view_own = auth()->user()->can('sell.create');
+        if (!$is_admin && !$can_view_own) {
             abort(403, 'Unauthorized action.');
         }
 
@@ -311,7 +339,8 @@ class VendorReportController extends Controller
         $end = $start->copy()->addDays(6)->endOfDay();
         $location_id = $request->get('location_id');
 
-        $data = $this->buildReportData($business_id, $start, $end, $location_id);
+        $only_user_id = $is_admin ? null : auth()->id();
+        $data = $this->buildReportData($business_id, $start, $end, $location_id, $only_user_id);
 
         $filename = 'reporte_vendedores_' . $start->toDateString() . '_a_' . $end->toDateString() . '.xlsx';
 

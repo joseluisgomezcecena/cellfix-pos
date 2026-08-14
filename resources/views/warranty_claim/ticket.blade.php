@@ -59,12 +59,18 @@
     <div class="box">
         <h4>EQUIPO DEVUELTO POR EL CLIENTE</h4>
         <div>{{ $claim->original_product_name }}</div>
+        @if(!empty($original_imei))
+            <div style="font-size: 11px; margin-top: 3px;"><strong>IMEI/SKU:</strong> {{ $original_imei }}</div>
+        @endif
     </div>
 
     @if($claim->replacement_product_name)
         <div class="box">
             <h4>EQUIPO ENTREGADO AL CLIENTE</h4>
             <div>{{ $claim->replacement_product_name }}</div>
+            @if(!empty($replacement_imei))
+                <div style="font-size: 11px; margin-top: 3px;"><strong>IMEI/SKU:</strong> {{ $replacement_imei }}</div>
+            @endif
         </div>
     @endif
 

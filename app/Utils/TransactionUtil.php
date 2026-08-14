@@ -32,6 +32,48 @@ use App\CashRegister;
 class TransactionUtil extends Util
 {
     /**
+     * Sum a denomination_breakdown structure to a MXN total.
+     * Accepts nested {mxn:{}, usd:{}, usd_in_mxn?, exchange_rate?} or the legacy flat format.
+     * Coin keys accumulate as float; numeric keys are treated as face value × count.
+     */
+    public static function sumDenominationBreakdown($bd)
+    {
+        $data = is_string($bd) ? json_decode($bd, true) : $bd;
+        if (! is_array($data)) return 0.0;
+        $walk = function ($arr) {
+            $s = 0.0;
+            foreach ($arr as $k => $v) {
+                if ($k === 'coins') $s += (float) $v;
+                elseif (is_numeric($k)) $s += (int) $k * (int) $v;
+            }
+            return $s;
+        };
+        if (isset($data['mxn']) || isset($data['usd'])) {
+            $s = !empty($data['mxn']) ? $walk($data['mxn']) : 0.0;
+            if (!empty($data['usd_in_mxn'])) $s += (float) $data['usd_in_mxn'];
+            elseif (!empty($data['usd']) && !empty($data['exchange_rate'])) {
+                $s += $walk($data['usd']) * (float) $data['exchange_rate'];
+            }
+            return $s;
+        }
+        return $walk($data);
+    }
+
+    /**
+     * Denomination_breakdown must match the payment amount (±tolerance).
+     * Returns [ok, msg]. msg contains the actual sum vs expected for the error toast.
+     */
+    public static function checkDenominationMatchesAmount($bd, $amount, $tolerance = 0.5)
+    {
+        $sum = self::sumDenominationBreakdown($bd);
+        if (abs($sum - (float) $amount) <= $tolerance) return [true, null];
+        return [false, sprintf(
+            'El desglose de billetes suma $%s pero el pago en efectivo es $%s. Corrige el desglose para que coincida.',
+            number_format($sum, 2), number_format((float) $amount, 2)
+        )];
+    }
+
+    /**
      * Add Sell transaction
      *
      * @param  int  $business_id
@@ -1517,6 +1559,11 @@ class TransactionUtil extends Util
             if ($il->show_payments == 1) {
                 $payments = $transaction->payment_lines->toArray();
                 $payment_types = $this->payment_types($transaction->location_id, true);
+                // Mapa terminal_id => nombre para agregar al ticket cuando el pago es card.
+                // Antes el ticket solo decía "Tarjeta $X" sin especificar terminal, y el
+                // corte no podía cruzarse con el ticket. Ahora se ve "Tarjeta (Banbajio) $X".
+                $card_terminals = \App\CardTerminal::where('business_id', $transaction->business_id)
+                    ->pluck('name', 'id')->toArray();
                 if (! empty($payments)) {
                     foreach ($payments as $value) {
                         $method = ! empty($payment_types[$value['method']]) ? $payment_types[$value['method']] : '';
@@ -1529,8 +1576,11 @@ class TransactionUtil extends Util
                             if ($value['is_return'] == 1) {
                             }
                         } elseif ($value['method'] == 'card') {
+                            $terminal_label = !empty($value['card_terminal_id']) && isset($card_terminals[$value['card_terminal_id']])
+                                ? ' ('.$card_terminals[$value['card_terminal_id']].')'
+                                : '';
                             $output['payments'][] =
-                                ['method' => $method.(! empty($value['card_transaction_number']) ? (', Transaction Number:'.$value['card_transaction_number']) : ''),
+                                ['method' => $method.$terminal_label.(! empty($value['card_transaction_number']) ? (', Transaction Number:'.$value['card_transaction_number']) : ''),
                                     'amount' => $this->num_f($value['amount'], $show_currency, $business_details),
                                     'date' => $this->format_date($value['paid_on'], false, $business_details),
                                 ];

@@ -26,6 +26,13 @@ class SalesDashboardController extends Controller
             ->whereRaw('LOWER(name) = ?', [strtolower($name)])->value('id');
     }
 
+    private function brandIds($business_id, array $names)
+    {
+        $lowered = array_map('strtolower', $names);
+        return DB::table('brands')->where('business_id', $business_id)
+            ->whereIn(DB::raw('LOWER(name)'), $lowered)->pluck('id')->toArray();
+    }
+
     private function categoryTree($business_id, $rootName)
     {
         $root = DB::table('categories')->where('business_id', $business_id)
@@ -64,11 +71,29 @@ class SalesDashboardController extends Controller
         $end = $start->copy()->addDays(6)->endOfDay();
         $location_id = $request->get('location_id');
 
-        $brand_equipos = $this->brandId($business_id, 'Equipos');
-        $brand_accesorios = $this->brandId($business_id, 'Accesorios');
-        $brand_reparaciones = $this->brandId($business_id, 'Reparaciones');
-        $brand_servicios = $this->brandId($business_id, 'Servicios');
-        $brand_desbloqueos = $this->brandId($business_id, 'Desbloqueos');
+        // Todos los brand lookups usan arrays porque en la BD real hay duplicados por
+        // typos (ej. "Hidrogel" id=109 y "HIdrogel" id=105 con I mayúscula). Si tomáramos
+        // solo el primero perderíamos las ventas de las demás variantes.
+        $brands_equipos = $this->brandIds($business_id, ['Equipos', 'Equipo']);
+        $brands_accesorios = $this->brandIds($business_id, ['Accesorios']);
+        $brands_reparaciones = $this->brandIds($business_id, ['Reparaciones', 'Reparacion']);
+        $brands_servicios = $this->brandIds($business_id, ['Servicios', 'Servicio']);
+        $brands_desbloqueos = $this->brandIds($business_id, ['Desbloqueos', 'Desbloqueo']);
+        $brands_cortos = $this->brandIds($business_id, ['Corto', 'Cortos']);
+        // Los productos HIDROGEL vienen con brand='Hidrogel' pero categoría=VT (root),
+        // no en la subcategoría específica. Detectar por brand además de categoría cubre
+        // ambos casos. Lo mismo aplica para VT — brand="Vidrio Templado".
+        $brands_hidrogel = $this->brandIds($business_id, ['Hidrogel']);
+        $brands_vidrio = $this->brandIds($business_id, ['Vidrio Templado', 'VT']);
+
+        // Brands nuevas (creadas ≥ cutoff): aparecen como su propia línea con su
+        // nombre real. Ajusta la fecha si necesitas que brands viejas también salgan solas.
+        $new_brand_cutoff = '2026-08-13';
+        $new_brand_labels = DB::table('brands')->where('business_id', $business_id)
+            ->where('created_at', '>=', $new_brand_cutoff)
+            ->pluck('name', 'id')
+            ->map(fn ($n) => mb_strtoupper($n))
+            ->toArray();
         $vt_cats = $this->categoryTree($business_id, 'VT');
         $hidrogel_cats = $this->categoryTree($business_id, 'Hidrogel');
         $vt_only = array_values(array_diff($vt_cats, $hidrogel_cats));
@@ -234,27 +259,50 @@ class SalesDashboardController extends Controller
 
         $vt = array_flip($vt_only);
         $hg = array_flip($hidrogel_cats);
-        $bucket_order = ['EQUIPOS', 'ACCESORIOS', 'VT', 'HIDROGEL', 'REPARACIONES', 'SERVICIOS', 'DESBLOQUEOS', 'OTROS'];
+        $eq_flip = array_flip($brands_equipos);
+        $ac_flip = array_flip($brands_accesorios);
+        $rep_flip = array_flip($brands_reparaciones);
+        $srv_flip = array_flip($brands_servicios);
+        $des_flip = array_flip($brands_desbloqueos);
+        $cortos_flip = array_flip($brands_cortos);
+        $hid_flip = array_flip($brands_hidrogel);
+        $vidrio_flip = array_flip($brands_vidrio);
+        $known_buckets = ['EQUIPOS', 'ACCESORIOS', 'VT', 'HIDROGEL', 'CORTOS', 'REPARACIONES', 'SERVICIOS', 'DESBLOQUEOS'];
         $buckets = [];
-        foreach ($bucket_order as $b) {
+        foreach ($known_buckets as $b) {
             $buckets[$b] = ['vendors' => [], 'qty' => 0, 'amount' => 0];
         }
+        $buckets['OTROS'] = ['vendors' => [], 'qty' => 0, 'amount' => 0];
         foreach ($rows as $r) {
-            $bucket = 'OTROS';
-            if ($r->brand_id == $brand_equipos) {
+            $bucket = null;
+            if (isset($eq_flip[$r->brand_id])) {
                 $bucket = 'EQUIPOS';
-            } elseif ($r->brand_id == $brand_reparaciones) {
+            } elseif (isset($rep_flip[$r->brand_id])) {
                 $bucket = 'REPARACIONES';
-            } elseif ($r->brand_id == $brand_servicios) {
+            } elseif (isset($srv_flip[$r->brand_id])) {
                 $bucket = 'SERVICIOS';
-            } elseif ($r->brand_id == $brand_desbloqueos) {
+            } elseif (isset($des_flip[$r->brand_id])) {
                 $bucket = 'DESBLOQUEOS';
+            } elseif (isset($cortos_flip[$r->brand_id])) {
+                $bucket = 'CORTOS';
+            } elseif (isset($hid_flip[$r->brand_id])) {
+                $bucket = 'HIDROGEL';
             } elseif (isset($hg[$r->category_id])) {
                 $bucket = 'HIDROGEL';
+            } elseif (isset($vidrio_flip[$r->brand_id])) {
+                $bucket = 'VT';
             } elseif (isset($vt[$r->category_id])) {
                 $bucket = 'VT';
-            } elseif ($r->brand_id == $brand_accesorios) {
+            } elseif (isset($ac_flip[$r->brand_id])) {
                 $bucket = 'ACCESORIOS';
+            } elseif (isset($new_brand_labels[$r->brand_id])) {
+                // Brand nueva (creada ≥ cutoff) sin bucket conceptual: sale con su propio nombre.
+                $bucket = $new_brand_labels[$r->brand_id];
+                if (!isset($buckets[$bucket])) {
+                    $buckets[$bucket] = ['vendors' => [], 'qty' => 0, 'amount' => 0];
+                }
+            } else {
+                $bucket = 'OTROS';
             }
             $vname = $vendorLabel($r->created_by);
             $qty = (float) $r->quantity;
@@ -267,6 +315,15 @@ class SalesDashboardController extends Controller
             $buckets[$bucket]['qty'] += $qty;
             $buckets[$bucket]['amount'] += $amt;
         }
+
+        // Reordenar buckets: conocidos primero → brands nuevas alfabéticas → OTROS al final.
+        $ordered = [];
+        foreach ($known_buckets as $n) $ordered[$n] = $buckets[$n];
+        $extra = array_diff(array_keys($buckets), $known_buckets, ['OTROS']);
+        sort($extra);
+        foreach ($extra as $n) $ordered[$n] = $buckets[$n];
+        $ordered['OTROS'] = $buckets['OTROS'];
+        $buckets = $ordered;
 
         $allCatVendors = [];
         foreach ($buckets as $bd) {

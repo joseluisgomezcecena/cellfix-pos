@@ -4,6 +4,7 @@
 @section('content')
 
 @php
+    $always_show = ['HIDROGEL', 'CORTOS'];
     $chart_day_labels = [];
     $chart_day_qty = [];
     $chart_day_amount = [];
@@ -171,7 +172,7 @@
                     <tbody>
                         @php $g_qty = 0; $g_amt = 0; @endphp
                         @foreach($buckets as $bname => $bd)
-                            @if($bd['qty'] > 0 || $bd['amount'] > 0)
+                            @if($bd['qty'] > 0 || $bd['amount'] > 0 || in_array($bname, $always_show))
                                 @php $g_qty += $bd['qty']; $g_amt += $bd['amount']; @endphp
                                 <tr><td><strong>{{ $bname }}</strong></td>
                                     <td class="text-center">{{ (int) $bd['qty'] }}</td>
@@ -201,7 +202,7 @@
                     <th class="text-center">TOTAL</th></tr></thead>
                 <tbody>
                     @foreach($buckets as $bname => $bd)
-                        @if($bd['qty'] > 0)
+                        @if($bd['qty'] > 0 || in_array($bname, $always_show))
                             <tr><td><strong>{{ $bname }}</strong></td>
                                 @foreach($allCatVendors as $v)
                                     <td class="text-center">{{ isset($bd['vendors'][$v]) ? (int) $bd['vendors'][$v]['qty'] : '' }}</td>

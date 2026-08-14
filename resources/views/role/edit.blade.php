@@ -1653,6 +1653,8 @@
           </div>
         @endif
         @include('role.partials.module_permissions')
+        @include('role.partials.celfix_permissions')
+
         <div class="row">
         <div class="col-md-12 text-center">
            <button type="submit" class="tw-dw-btn tw-dw-btn-primary tw-dw-btn-lg tw-text-white">@lang( 'messages.update' )</button>

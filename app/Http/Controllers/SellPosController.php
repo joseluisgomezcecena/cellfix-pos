@@ -416,6 +416,21 @@ class SellPosController extends Controller
                                         ->with('status', $output);
                                 }
                             }
+                            // La suma del desglose debe cuadrar con el amount (±$0.50).
+                            // Sin este check, una venta puede quedar con amount=$4,000 pero
+                            // desglose de billetes por $500 — hueco que permitía discrepancias
+                            // de caja documentadas en el análisis forense.
+                            [$ok, $msg] = \App\Utils\TransactionUtil::checkDenominationMatchesAmount($bd, $amount);
+                            if (!$ok) {
+                                $output = ['success' => 0, 'msg' => $msg];
+                                if (!$is_direct_sale) {
+                                    return $output;
+                                } else {
+                                    return redirect()
+                                        ->action([\App\Http\Controllers\SellController::class, 'index'])
+                                        ->with('status', $output);
+                                }
+                            }
                         }
                     }
                 }
@@ -502,6 +517,64 @@ class SellPosController extends Controller
                     'discount_amount' => $input['discount_amount'],
                 ];
                 $invoice_total = $this->productUtil->calculateInvoiceTotal($input['products'], $input['tax_rate_id'], $discount);
+
+                // Validación Celfix — bloqueo de ventas con SALDO PENDIENTE.
+                // Antes salía solo un confirm() del navegador y la cajera pudo cerrar
+                // ventas con $3,000+ de deuda por accidente. Ahora los vendedores no
+                // pueden; solo admins con business_settings.access, y siempre
+                // requiere marca explícita is_credit_sale=1 desde el frontend.
+                $is_credit_sale_check = isset($input['is_credit_sale']) && $input['is_credit_sale'] == 1;
+                $is_suspend_check = isset($input['is_suspend']) && $input['is_suspend'] == 1;
+                $is_repair_pending = !empty($input['repair_status']) && $input['repair_status'] === 'pending';
+                $has_layaway = !empty($input['layaway_id']);
+                $is_final = ($input['status'] ?? 'final') === 'final';
+                $is_legit_partial = $is_credit_sale_check || $is_suspend_check || $is_repair_pending || $has_layaway || !$is_final;
+                if (!$is_legit_partial && !empty($input['payment']) && is_array($input['payment'])) {
+                    $total_paid_check = 0.0;
+                    foreach ($input['payment'] as $pline) {
+                        $m = $pline['method'] ?? '';
+                        if ($m === 'advance') continue;
+                        if (!empty($pline['is_return'])) continue;
+                        $a = $pline['amount'] ?? 0;
+                        $total_paid_check += is_string($a) ? (float) $this->transactionUtil->num_uf($a) : (float) $a;
+                    }
+                    $balance_check = round(((float) $invoice_total['final_total']) - $total_paid_check, 2);
+                    if ($balance_check >= 0.5) {
+                        $is_admin = auth()->user()->can('business_settings.access') || auth()->user()->can('superadmin');
+                        if (!$is_admin) {
+                            $output = [
+                                'success' => 0,
+                                'msg' => 'No puedes finalizar esta venta con saldo pendiente de $'
+                                    . number_format($balance_check, 2)
+                                    . '. Cobra el total o pide a un admin que autorice la venta a crédito.',
+                            ];
+                            if (!$is_direct_sale) {
+                                return $output;
+                            } else {
+                                return redirect()
+                                    ->action([\App\Http\Controllers\SellController::class, 'index'])
+                                    ->with('status', $output);
+                            }
+                        }
+                        // Admin: requiere marca is_credit_sale=1 desde el frontend.
+                        // Si llegó sin ella, el JS del confirm no se aceptó y hay bypass.
+                        if (!$is_credit_sale_check) {
+                            $output = [
+                                'success' => 0,
+                                'msg' => 'Esta venta tiene saldo pendiente de $'
+                                    . number_format($balance_check, 2)
+                                    . '. Para registrarla como venta a crédito usa el botón "Venta a crédito".',
+                            ];
+                            if (!$is_direct_sale) {
+                                return $output;
+                            } else {
+                                return redirect()
+                                    ->action([\App\Http\Controllers\SellController::class, 'index'])
+                                    ->with('status', $output);
+                            }
+                        }
+                    }
+                }
 
                 DB::beginTransaction();
 
@@ -1311,6 +1384,34 @@ class SellPosController extends Controller
 
         try {
             $input = $request->except('_token');
+
+            // Mismo check que store: si hay pago cash, el desglose debe existir Y sumar
+            // igual al amount. Sin esto un admin puede editar una venta y meter
+            // amount=$4,000 con desglose de $500 — hueco documentado.
+            if (!empty($input['payment']) && is_array($input['payment'])) {
+                foreach ($input['payment'] as $pline) {
+                    $method = $pline['method'] ?? null;
+                    $amount_raw = $pline['amount'] ?? 0;
+                    $amount = is_string($amount_raw)
+                        ? $this->transactionUtil->num_uf($amount_raw)
+                        : (float) $amount_raw;
+                    if ($method !== 'cash' || $amount <= 0) continue;
+                    $bd = $pline['denomination_breakdown'] ?? null;
+                    $has_breakdown = !empty($bd)
+                        && is_array(is_string($bd) ? json_decode($bd, true) : $bd)
+                        && !empty(is_string($bd) ? json_decode($bd, true) : $bd);
+                    if (!$has_breakdown) {
+                        return redirect()->back()->with('status', [
+                            'success' => 0,
+                            'msg' => 'Debes registrar el desglose de billetes recibidos en el pago en efectivo.',
+                        ]);
+                    }
+                    [$ok, $msg] = \App\Utils\TransactionUtil::checkDenominationMatchesAmount($bd, $amount);
+                    if (!$ok) {
+                        return redirect()->back()->with('status', ['success' => 0, 'msg' => $msg]);
+                    }
+                }
+            }
 
             //status is send as quotation from edit sales screen.
             $input['is_quotation'] = 0;

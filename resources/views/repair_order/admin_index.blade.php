@@ -99,9 +99,9 @@
     </div>
 </section>
 
-{{-- Modal para cambiar técnico --}}
+{{-- Modal para cambiar técnico (por línea, soporta 2+ técnicos en la misma reparación) --}}
 <div class="modal fade" id="change_technician_modal" tabindex="-1" role="dialog">
-    <div class="modal-dialog" role="document">
+    <div class="modal-dialog modal-lg" role="document">
         <div class="modal-content">
             <div class="modal-header" style="background-color: #2196f3; color: #fff;">
                 <button type="button" class="close" data-dismiss="modal" style="color: #fff;">&times;</button>
@@ -109,32 +109,61 @@
             </div>
             <div class="modal-body">
                 <p>
-                    <strong>Reparación:</strong> <span id="ct_invoice"></span><br>
-                    <strong>Cliente:</strong> <span id="ct_customer"></span><br>
-                    <strong>Producto(s):</strong> <span id="ct_products" class="text-muted"></span><br>
-                    <strong>Técnico actual:</strong> <span id="ct_current_technician" style="color: #c0392b;"></span>
+                    <strong>Reparación:</strong> <span id="ct_invoice"></span> &nbsp;·&nbsp;
+                    <strong>Cliente:</strong> <span id="ct_customer"></span>
                 </p>
-                <hr>
-                <div class="form-group">
-                    <label>Nuevo técnico:</label>
-                    <select id="ct_technician" class="form-control">
-                        <option value="">— Sin asignar —</option>
-                        @foreach($technicians as $t)
-                            <option value="{{ $t->id }}">{{ $t->name }}</option>
-                        @endforeach
-                    </select>
+
+                {{-- Aplicar mismo técnico a todas las líneas — atajo para casos simples --}}
+                <div class="well well-sm" style="background: #e3f2fd; padding: 10px;">
+                    <div class="form-inline">
+                        <label style="margin-right: 8px;"><i class="fas fa-users"></i> Aplicar a TODAS las líneas:</label>
+                        <select id="ct_apply_all" class="form-control" style="min-width: 220px;">
+                            <option value="">— Elige un técnico —</option>
+                            @foreach($technicians as $t)
+                                <option value="{{ $t->id }}">{{ $t->name }}</option>
+                            @endforeach
+                        </select>
+                        <button type="button" class="btn btn-sm btn-info" id="ct_apply_all_btn" style="margin-left: 6px;">
+                            <i class="fas fa-arrow-down"></i> Aplicar
+                        </button>
+                        <small class="text-muted" style="display: block; margin-top: 4px;">
+                            Opcional. Si necesitas técnicos distintos por producto, edítalos directamente en la tabla.
+                        </small>
+                    </div>
                 </div>
+
+                <table class="table table-bordered table-condensed" id="ct_lines_table" style="margin-top: 12px;">
+                    <thead>
+                        <tr class="bg-purple">
+                            <th style="width: 55%;">Producto</th>
+                            <th>Técnico</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+                <div id="ct_lines_loading" class="text-center text-muted" style="padding: 20px;">
+                    <i class="fas fa-spinner fa-spin"></i> Cargando líneas…
+                </div>
+
                 <input type="hidden" id="ct_transaction_id">
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-default" data-dismiss="modal">Cancelar</button>
                 <button type="button" class="btn btn-primary" id="ct_save_btn">
-                    <i class="fas fa-save"></i> Guardar cambio
+                    <i class="fas fa-save"></i> Guardar cambios
                 </button>
             </div>
         </div>
     </div>
 </div>
+
+{{-- Options list reutilizable para los selects por línea --}}
+<script type="text/template" id="ct_tech_options_tpl">
+    <option value="">— Sin asignar —</option>
+    @foreach($technicians as $t)
+        <option value="{{ $t->id }}">{{ $t->name }}</option>
+    @endforeach
+</script>
 
 @stop
 
@@ -287,30 +316,66 @@ $(document).ready(function () {
         table.ajax.reload();
     });
 
-    // Abrir modal de cambiar técnico
+    // Abrir modal de cambiar técnico — carga las líneas dinámicamente.
+    // Cada producto/línea tiene su propio select para permitir 2+ técnicos por reparación.
     $(document).on('click', '.rep-admin-change', function () {
         var b = $(this);
-        $('#ct_transaction_id').val(b.data('id'));
+        var id = b.data('id');
+        $('#ct_transaction_id').val(id);
         $('#ct_invoice').text(b.data('invoice') || '—');
         $('#ct_customer').text(b.data('customer'));
-        $('#ct_products').text(b.data('products'));
-        $('#ct_current_technician').text(b.data('current-technician'));
-        $('#ct_technician').val(b.data('current-technician-id') || '');
+        $('#ct_apply_all').val('');
+        $('#ct_lines_table').hide();
+        $('#ct_lines_table tbody').empty();
+        $('#ct_lines_loading').show();
         $('#change_technician_modal').modal('show');
+
+        var tplOptions = $('#ct_tech_options_tpl').html();
+        $.getJSON('/repair-orders/' + id + '/lines', function (resp) {
+            $('#ct_lines_loading').hide();
+            if (!resp || resp.success !== 1) {
+                toastr.error('No se pudieron cargar las líneas de la reparación.');
+                return;
+            }
+            var $tbody = $('#ct_lines_table tbody');
+            resp.lines.forEach(function (line) {
+                var $sel = $('<select class="form-control input-sm ct-line-tech" '
+                    + 'data-tsl-id="' + line.tsl_id + '">' + tplOptions + '</select>');
+                $sel.val(line.technician_id || '');
+                var $tr = $('<tr></tr>');
+                $tr.append($('<td></td>').text(line.product_name));
+                $tr.append($('<td></td>').append($sel));
+                $tbody.append($tr);
+            });
+            $('#ct_lines_table').show();
+        }).fail(function () {
+            $('#ct_lines_loading').hide();
+            toastr.error('Error al cargar las líneas.');
+        });
     });
 
-    // Guardar cambio de técnico
+    // Aplicar mismo técnico a todas las líneas del modal
+    $('#ct_apply_all_btn').click(function () {
+        var val = $('#ct_apply_all').val();
+        $('.ct-line-tech').val(val);
+    });
+
+    // Guardar cambio de técnico — envía por línea (assignments)
     $('#ct_save_btn').click(function () {
         var id = $('#ct_transaction_id').val();
-        var technician_id = $('#ct_technician').val();
         if (!id) return;
+        var assignments = {};
+        $('.ct-line-tech').each(function () {
+            var $s = $(this);
+            assignments[$s.data('tsl-id')] = $s.val() || '';
+        });
         var btn = $(this);
         btn.prop('disabled', true);
         $.ajax({
             method: 'POST',
             url: '/repair-orders/' + id + '/change-technician',
             data: {
-                technician_id: technician_id,
+                assignments: assignments,
                 _token: '{{ csrf_token() }}'
             },
             dataType: 'json',

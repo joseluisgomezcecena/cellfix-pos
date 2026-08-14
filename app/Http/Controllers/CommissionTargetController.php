@@ -16,7 +16,7 @@ class CommissionTargetController extends Controller
      */
     public function index()
     {
-        if (!auth()->user()->can('business_settings.access')) {
+        if (!auth()->user()->can('business_settings.access') && !auth()->user()->can('celfix.vendors.commissions')) {
             abort(403, 'Unauthorized action.');
         }
 
@@ -85,7 +85,7 @@ class CommissionTargetController extends Controller
      */
     public function edit($user_id)
     {
-        if (!auth()->user()->can('business_settings.access')) {
+        if (!auth()->user()->can('business_settings.access') && !auth()->user()->can('celfix.vendors.commissions')) {
             abort(403, 'Unauthorized action.');
         }
 
@@ -134,7 +134,7 @@ class CommissionTargetController extends Controller
      */
     public function update(Request $request, $user_id)
     {
-        if (!auth()->user()->can('business_settings.access')) {
+        if (!auth()->user()->can('business_settings.access') && !auth()->user()->can('celfix.vendors.commissions')) {
             abort(403, 'Unauthorized action.');
         }
 
