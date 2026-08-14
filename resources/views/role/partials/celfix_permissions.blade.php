@@ -20,7 +20,18 @@
         <small class="text-muted" style="font-size:10px;">Cada permiso controla si el ítem aparece en el sidebar del usuario y si puede entrar al módulo.</small>
     </div>
     <div class="col-md-9">
-        <div class="col-md-12"><strong style="color:#2e7d32;">GARANTÍAS</strong></div>
+        <div class="col-md-12"><strong style="color:#2e7d32;">TABLERO DE VENTAS</strong></div>
+        <div class="col-md-12">
+            <div class="checkbox">
+                <label>
+                    {!! Form::checkbox('permissions[]', 'celfix.sales_dashboard.view', in_array('celfix.sales_dashboard.view', $role_permissions ?? []), ['class' => 'input-icheck']); !!}
+                    Ver tablero de ventas semanal
+                    <small class="text-muted">(sidebar: <em>Ventas → Tablero de ventas</em>)</small>
+                </label>
+            </div>
+        </div>
+
+        <div class="col-md-12" style="margin-top:6px;"><strong style="color:#2e7d32;">GARANTÍAS</strong></div>
         <div class="col-md-12">
             <div class="checkbox">
                 <label>

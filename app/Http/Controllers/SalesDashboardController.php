@@ -15,7 +15,9 @@ class SalesDashboardController extends Controller
 {
     private function authorizeAccess()
     {
-        if (! auth()->user()->can('business_settings.access') && ! auth()->user()->can('view_purchase_n_sell_report')) {
+        if (! auth()->user()->can('business_settings.access')
+            && ! auth()->user()->can('view_purchase_n_sell_report')
+            && ! auth()->user()->can('celfix.sales_dashboard.view')) {
             abort(403, 'Unauthorized action.');
         }
     }

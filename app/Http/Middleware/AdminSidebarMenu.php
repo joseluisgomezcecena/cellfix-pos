@@ -292,12 +292,16 @@ class AdminSidebarMenu
                   </svg>', 'id' => 'tour_step6']
                 )->order(25);
             }
-            //Sell dropdown
-            if ($is_admin || auth()->user()->hasAnyPermission(['sell.view', 'sell.create', 'direct_sell.access', 'view_own_sell_only', 'view_commission_agent_sell', 'access_shipping', 'access_own_shipping', 'access_commission_agent_shipping', 'access_sell_return', 'direct_sell.view', 'direct_sell.update', 'access_own_sell_return'])) {
+            //Sell dropdown — visible también si el user tiene el permiso Celfix para
+            //tablero de ventas (así un rol "dueño-solo-números" ve este dropdown).
+            if ($is_admin || auth()->user()->can('celfix.sales_dashboard.view')
+                || auth()->user()->hasAnyPermission(['sell.view', 'sell.create', 'direct_sell.access', 'view_own_sell_only', 'view_commission_agent_sell', 'access_shipping', 'access_own_shipping', 'access_commission_agent_shipping', 'access_sell_return', 'direct_sell.view', 'direct_sell.update', 'access_own_sell_return'])) {
                 $menu->dropdown(
                     __('sale.sale'),
                     function ($sub) use ($enabled_modules, $is_admin, $pos_settings) {
-                        if (auth()->user()->can('business_settings.access') || auth()->user()->can('view_purchase_n_sell_report')) {
+                        if (auth()->user()->can('business_settings.access')
+                            || auth()->user()->can('view_purchase_n_sell_report')
+                            || auth()->user()->can('celfix.sales_dashboard.view')) {
                             $sub->url(
                                 action([\App\Http\Controllers\SalesDashboardController::class, 'index']),
                                 __('lang_v1.sales_dashboard'),
