@@ -52,7 +52,7 @@
     @endcomponent
 
     <style>
-        .denominations-table { font-size: 12px; }
+        .denominations-table { font-size: 12px; border-collapse: separate; border-spacing: 0; }
         .denominations-table th, .denominations-table td { padding: 6px !important; vertical-align: middle !important; }
         .denominations-table thead th { text-align: center; background-color: #d1ecf1; font-weight: bold; }
         .denominations-table .group-mxn { background-color: #fff9c4; }
@@ -61,6 +61,20 @@
         .denominations-table .day-cell { background-color: #fff700; font-weight: bold; }
         .denominations-table .total-cell { background-color: #fff59d; font-weight: bold; }
         .denominations-table .grand-total-row { background-color: #ffe082; font-weight: bold; }
+        /* Separación visual entre días: cada tbody.day-group es un bloque con borde y espacio */
+        .denominations-table tbody.day-group {
+            border: 3px solid #1976d2;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.25);
+        }
+        .denominations-table tbody.day-group + tbody.day-group {
+            /* separación entre días — spacer row de altura visible */
+        }
+        .denominations-table tr.day-spacer td {
+            padding: 0 !important;
+            height: 17px;
+            background: transparent !important;
+            border: none !important;
+        }
     </style>
 
     @component('components.widget', ['class' => 'box-primary', 'title' => __('lang_v1.denominations_breakdown')])
@@ -95,9 +109,13 @@
                         <th class="group-usd">CONV. MXN</th>
                     </tr>
                 </thead>
-                <tbody>
-                    @foreach($rows as $row)
-                        @php $date_key = $row['date']->toDateString(); $vc = ($vendor_counts_by_date ?? [])[$date_key] ?? null; @endphp
+                @php $total_cols = 1 + count($mxn_faces) + 2 + count($usd_faces) + 3 + 2 + 1 + count($terminal_names) + 3; @endphp
+                @foreach($rows as $row_index => $row)
+                    @php $date_key = $row['date']->toDateString(); $vc = ($vendor_counts_by_date ?? [])[$date_key] ?? null; @endphp
+                    @if($row_index > 0)
+                        <tbody><tr class="day-spacer"><td colspan="{{ $total_cols }}"></td></tr></tbody>
+                    @endif
+                    <tbody class="day-group">
                         <tr>
                             <td class="day-cell" @if(!empty($location_id)) rowspan="2" @endif>
                                 {{ $row['day_name'] }}
@@ -158,9 +176,13 @@
                             </td>
                         </tr>
                         {{-- FILA CAJERO: inputs manuales para que el cajero capture su conteo físico.
-                             Solo visible cuando hay sucursal filtrada (sin sucursal no tiene sentido). --}}
+                             Solo visible cuando hay sucursal filtrada (sin sucursal no tiene sentido).
+                             data-cambio: monto del cambio dado en efectivo ese día (se resta del total
+                             cajero para que use la misma fórmula que el sistema: recibido - cambio). --}}
                         @if(!empty($location_id))
-                            <tr class="vc-row" data-date="{{ $date_key }}" style="background-color:#fffbe6;">
+                            <tr class="vc-row" data-date="{{ $date_key }}"
+                                data-cambio="{{ $row['cambio_cash'] }}"
+                                style="background-color:#fffbe6;">
                                 @foreach($mxn_faces as $face)
                                     <td class="text-center">
                                         <input type="number" min="0" step="1"
@@ -194,10 +216,14 @@
                                 </td>
                                 <td class="text-right group-usd vc-usd-subtotal" style="font-weight:bold;">$0.00</td>
                                 <td class="text-right group-usd vc-usd-mxn">
+                                    {{-- Rate USD→MXN. Si no hay conteo guardado, arranca con el
+                                         tipo de cambio actual del negocio para que el cajero no
+                                         tenga que teclearlo (y evite dejarlo en 0 = dólares no cuentan). --}}
                                     <input type="number" min="0" step="0.01"
                                         class="form-control input-sm vc-rate text-right"
                                         placeholder="rate" style="width:70px; padding:2px; font-size:11px;"
-                                        value="{{ $vc && $vc->usd_exchange_rate ? $vc->usd_exchange_rate : '' }}">
+                                        title="Tipo de cambio USD → MXN"
+                                        value="{{ $vc && $vc->usd_exchange_rate ? $vc->usd_exchange_rate : ($default_exchange_rate ?: '') }}">
                                 </td>
                                 {{-- El resto de columnas no aplican al conteo de billetes (cambio,
                                      total_card, terminals, transfer, cheque). Mostramos el TOTAL
@@ -213,8 +239,8 @@
                                 </td>
                             </tr>
                         @endif
-                    @endforeach
-                </tbody>
+                    </tbody>
+                @endforeach
                 <tfoot>
                     <tr class="grand-total-row">
                         <td>TOTALES</td>
@@ -335,7 +361,10 @@ $(document).ready(function () {
         weekStart: 6, daysOfWeekDisabled: [0,1,2,3,4,5]
     });
 
-    // Recalcula subtotales de la fila del cajero en vivo mientras escribe
+    // Recalcula subtotales de la fila del cajero en vivo mientras escribe.
+    // TOTAL CAJERO = MXN + USD*rate − cambio_efectivo — misma fórmula que el
+    // sistema (fila blanca arriba). Sin restar cambio, capturar los mismos
+    // billetes que el sistema arrojaría siempre una diferencia positiva.
     function recalcRow($row) {
         var mxn = 0;
         $row.find('.vc-mxn').each(function () {
@@ -348,7 +377,8 @@ $(document).ready(function () {
         });
         usd += parseFloat($row.find('.vc-usd-coins').val()) || 0;
         var rate = parseFloat($row.find('.vc-rate').val()) || 0;
-        var total = mxn + (usd * rate);
+        var cambio = parseFloat($row.data('cambio')) || 0;
+        var total = mxn + (usd * rate) - cambio;
         $row.find('.vc-mxn-subtotal').text('$' + mxn.toFixed(2));
         $row.find('.vc-usd-subtotal').text('$' + usd.toFixed(2));
         $row.find('.vc-total-cash').text('$' + total.toFixed(2));

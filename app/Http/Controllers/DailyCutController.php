@@ -334,10 +334,16 @@ class DailyCutController extends Controller
             $key = $date->toDateString();
             $day_cuts = $cuts_by_date->get($key, collect());
 
-            // Suma del conteo del vendedor para el día (todas las sucursales visibles)
+            // Suma del conteo del vendedor para el día (todas las sucursales visibles).
+            // Restamos el cambio dado en efectivo para usar la misma fórmula que el
+            // sistema: MXN + USD*rate − cambio. Sin esto el conteo del cajero siempre
+            // salía inflado por el cambio y aparecía como "sobra" falsa.
             $vc_day = $vendor_counts->get($key, collect());
             $vc_total_mxn = 0;
-            foreach ($vc_day as $vc) $vc_total_mxn += $vc->totalInMxn();
+            foreach ($vc_day as $vc) {
+                $cambio = $this->getCashChangeForDay($business_id, $vc->location_id, $key);
+                $vc_total_mxn += $vc->totalInMxn() - $cambio;
+            }
 
             $days[$key] = [
                 'date' => $date,
@@ -609,12 +615,19 @@ class DailyCutController extends Controller
                 $vendor_counts_by_date[$vc->cut_date->toDateString()] = $vc;
             }
         }
+        // Tipo de cambio actual del negocio (para autoprellenar el input rate del cajero
+        // cuando no ha guardado nada aún). Antes el input arrancaba vacío y si el cajero
+        // capturaba dólares sin poner rate, el sistema no los convertía a MXN y el total
+        // salía incorrecto.
+        $default_exchange_rate = (float) (\DB::table('business')
+            ->where('id', $business_id)
+            ->value('cash_exchange_rate') ?: 0);
 
         return view('daily_cut.denominations', compact(
             'rows', 'totals', 'mxn_faces', 'usd_faces', 'terminal_names',
             'start_date', 'location_id', 'locations',
             'weekly_total_cash', 'undesglosado_cash', 'weekly_total_expenses',
-            'weekly_expenses_by_category', 'vendor_counts_by_date'
+            'weekly_expenses_by_category', 'vendor_counts_by_date', 'default_exchange_rate'
         ));
     }
 
