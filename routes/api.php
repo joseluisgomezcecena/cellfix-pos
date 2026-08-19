@@ -16,3 +16,14 @@ use Illuminate\Http\Request;
 Route::middleware('auth:api')->get('/user', function (Request $request) {
     return $request->user();
 });
+
+// ═══════════════════════════════════════════════════════════════════
+// API pública v1 — la app Flutter Celfix Socios consume estos endpoints
+// sin auth. Devuelve solo data que puede ver cualquiera (sucursales,
+// promos vigentes, beneficios activos).
+// ═══════════════════════════════════════════════════════════════════
+Route::prefix('v1')->group(function () {
+    Route::get('/locations', [\App\Http\Controllers\Api\V1\PublicController::class, 'locations']);
+    Route::get('/promos',    [\App\Http\Controllers\Api\V1\PublicController::class, 'promos']);
+    Route::get('/benefits',  [\App\Http\Controllers\Api\V1\PublicController::class, 'benefits']);
+});
