@@ -82,6 +82,17 @@
             </div>
         </div>
 
+        <div class="col-md-12" style="margin-top:6px;"><strong style="color:#2e7d32;">APP CONFIG (datos que consume la app Flutter)</strong></div>
+        <div class="col-md-12">
+            <div class="checkbox">
+                <label>
+                    {!! Form::checkbox('permissions[]', 'celfix.app_config.access', in_array('celfix.app_config.access', $role_permissions ?? []), ['class' => 'input-icheck']); !!}
+                    Configurar sucursales, promos y beneficios de la app
+                    <small class="text-muted">(sidebar: <em>App Config</em>)</small>
+                </label>
+            </div>
+        </div>
+
         <div class="col-md-12" style="margin-top:6px;"><strong style="color:#2e7d32;">TÉCNICOS Y REPARACIONES</strong></div>
         <div class="col-md-12">
             <div class="checkbox">

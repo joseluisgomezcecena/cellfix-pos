@@ -464,6 +464,18 @@ Route::middleware(['setData', 'auth', 'SetSessionData', 'language', 'timezone', 
     Route::get('/daily-cuts', [\App\Http\Controllers\DailyCutController::class, 'index'])->name('daily-cuts.index');
     Route::get('/daily-cuts/weekly', [\App\Http\Controllers\DailyCutController::class, 'weekly'])->name('daily-cuts.weekly');
     Route::get('/daily-cuts/denominations', [\App\Http\Controllers\DailyCutController::class, 'denominations'])->name('daily-cuts.denominations');
+
+    // App Config — módulo admin para configurar datos que consume la app Flutter.
+    Route::prefix('app-config')->group(function () {
+        // Sucursales (App): edita phone/hours/coords/publicación
+        Route::get('/locations', [\App\Http\Controllers\AppConfig\LocationController::class, 'index'])->name('app-config.locations.index');
+        Route::get('/locations/{id}/edit', [\App\Http\Controllers\AppConfig\LocationController::class, 'edit'])->name('app-config.locations.edit');
+        Route::put('/locations/{id}', [\App\Http\Controllers\AppConfig\LocationController::class, 'update'])->name('app-config.locations.update');
+        // Promos
+        Route::resource('promos', \App\Http\Controllers\AppConfig\PromoController::class, ['as' => 'app-config']);
+        // Beneficios
+        Route::resource('benefits', \App\Http\Controllers\AppConfig\BenefitController::class, ['as' => 'app-config']);
+    });
     Route::post('/daily-cuts/vendor-counts', [\App\Http\Controllers\DailyCutController::class, 'saveVendorCounts'])->name('daily-cuts.vendor-counts');
     Route::get('/daily-cuts/export', [\App\Http\Controllers\DailyCutController::class, 'export'])->name('daily-cuts.export');
     Route::get('/daily-cuts/export-weekly', [\App\Http\Controllers\DailyCutController::class, 'exportWeekly'])->name('daily-cuts.export-weekly');

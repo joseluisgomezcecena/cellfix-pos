@@ -153,7 +153,7 @@ class SalesDashboardController extends Controller
                         );
                 });
             })
-            ->where('p.brand_id', $brand_equipos);
+            ->whereIn('p.brand_id', $brands_equipos);
         if (! empty($location_id)) {
             $eq->where('t.location_id', $location_id);
         }
