@@ -389,7 +389,9 @@ class SellPosController extends Controller
                 // Validación Celfix: si hay pago en efectivo, exigir denomination_breakdown.
                 // Sin desglose el reporte de denominaciones no cuadra con la vista semanal
                 // (algunos pagos aparecen en total_cash pero no en el desglose de billetes).
-                if (!empty($input['payment']) && is_array($input['payment'])) {
+                // Solo aplica a ventas FINALES: cotizaciones, borradores y suspend no mueven caja
+                // real y no deben exigir el desglose (arriba ya normalizamos quotation/proforma → draft).
+                if (($input['status'] ?? '') === 'final' && !empty($input['payment']) && is_array($input['payment'])) {
                     foreach ($input['payment'] as $pline) {
                         $method = $pline['method'] ?? null;
                         $amount_raw = $pline['amount'] ?? 0;
@@ -1388,7 +1390,8 @@ class SellPosController extends Controller
             // Mismo check que store: si hay pago cash, el desglose debe existir Y sumar
             // igual al amount. Sin esto un admin puede editar una venta y meter
             // amount=$4,000 con desglose de $500 — hueco documentado.
-            if (!empty($input['payment']) && is_array($input['payment'])) {
+            // Solo aplica al editar una venta FINAL. Cotizaciones/borradores no cuadran caja.
+            if (($input['status'] ?? '') === 'final' && !empty($input['payment']) && is_array($input['payment'])) {
                 foreach ($input['payment'] as $pline) {
                     $method = $pline['method'] ?? null;
                     $amount_raw = $pline['amount'] ?? 0;

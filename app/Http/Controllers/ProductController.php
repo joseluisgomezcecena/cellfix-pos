@@ -2370,13 +2370,17 @@ class ProductController extends Controller
             $stock_details = $this->productUtil->getVariationStockDetails($business_id, $id, request()->input('location_id'));
             $stock_history = $this->productUtil->getVariationStockHistory($business_id, $id, request()->input('location_id'));
 
-            //if mismach found update stock in variation location details
+            // NO auto-corregir stock desde el histórico. Warranty_claims descuentan
+            // el VLD directamente y no dejan transaction; si se auto-actualiza, se
+            // pierde el descuento y el iPhone reaparece con stock. Solo loguear.
             if (isset($stock_history[0]) && (float) $stock_details['current_stock'] != (float) $stock_history[0]['stock']) {
-                VariationLocationDetails::where('variation_id',
-                                            $id)
-                                    ->where('location_id', request()->input('location_id'))
-                                    ->update(['qty_available' => $stock_history[0]['stock']]);
-                $stock_details['current_stock'] = $stock_history[0]['stock'];
+                \Log::info(sprintf(
+                    '[productStockHistory] discrepancia (solo aviso, no se corrige) vid=%s loc=%s current_stock=%s calc_history=%s',
+                    $id,
+                    request()->input('location_id'),
+                    $stock_details['current_stock'],
+                    $stock_history[0]['stock']
+                ));
             }
 
             return view('product.stock_history_details')
