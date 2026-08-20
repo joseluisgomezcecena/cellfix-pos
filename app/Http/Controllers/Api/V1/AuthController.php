@@ -85,6 +85,50 @@ class AuthController extends Controller
         return response()->json(['success' => true, 'message' => 'Sesión cerrada.']);
     }
 
+    /**
+     * POST /api/v1/auth/change-password  (protected)
+     * Body: { current_password, new_password, new_password_confirmation }
+     *
+     * Al cambiar exitosamente NO invalida el token — el cliente sigue
+     * autenticado en su sesión actual. Sí invalida sesiones de otros
+     * dispositivos si los hubiera (regenera el token).
+     */
+    public function changePassword(Request $request): JsonResponse
+    {
+        $contact = $request->attributes->get('api_customer');
+        $current = (string) $request->input('current_password', '');
+        $new     = (string) $request->input('new_password', '');
+        $confirm = (string) $request->input('new_password_confirmation', '');
+
+        if ($current === '' || $new === '' || $confirm === '') {
+            return response()->json(['success' => false, 'message' => 'Faltan campos.'], 422);
+        }
+        if (strlen($new) < 6) {
+            return response()->json(['success' => false, 'message' => 'La nueva contraseña debe tener al menos 6 caracteres.'], 422);
+        }
+        if ($new !== $confirm) {
+            return response()->json(['success' => false, 'message' => 'La confirmación no coincide.'], 422);
+        }
+        if (!Hash::check($current, $contact->app_password ?? '')) {
+            return response()->json(['success' => false, 'message' => 'La contraseña actual es incorrecta.'], 401);
+        }
+        if ($new === $current) {
+            return response()->json(['success' => false, 'message' => 'La nueva contraseña debe ser distinta a la actual.'], 422);
+        }
+
+        // Actualiza password + rota token (invalida otros dispositivos).
+        $contact->app_password = Hash::make($new);
+        $new_token = Str::random(60);
+        $contact->app_api_token = hash('sha256', $new_token);
+        $contact->saveQuietly();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Contraseña actualizada.',
+            'token'   => $new_token,
+        ]);
+    }
+
     private function fail(): JsonResponse
     {
         return response()->json([

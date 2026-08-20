@@ -33,7 +33,11 @@ Route::prefix('v1')->group(function () {
         ->middleware('throttle:5,1');
 
     Route::middleware('auth.customer.api')->group(function () {
-        Route::post('/auth/logout', [\App\Http\Controllers\Api\V1\AuthController::class, 'logout']);
-        Route::get('/me',           [\App\Http\Controllers\Api\V1\MeController::class,   'show']);
+        Route::post('/auth/logout',          [\App\Http\Controllers\Api\V1\AuthController::class,        'logout']);
+        Route::post('/auth/change-password', [\App\Http\Controllers\Api\V1\AuthController::class,        'changePassword']);
+        Route::get('/me',                    [\App\Http\Controllers\Api\V1\MeController::class,          'show']);
+        Route::get('/purchases',             [\App\Http\Controllers\Api\V1\PurchasesController::class,   'index']);
+        Route::get('/purchases/{id}',        [\App\Http\Controllers\Api\V1\PurchasesController::class,   'show']);
+        Route::get('/repair-orders',         [\App\Http\Controllers\Api\V1\RepairOrdersController::class,'index']);
     });
 });
