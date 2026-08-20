@@ -117,7 +117,7 @@ class WarrantyClaimController extends Controller
                     $html = '<div class="btn-group">
                         <button type="button" class="btn btn-xs btn-info dropdown-toggle" data-toggle="dropdown">Acciones <span class="caret"></span></button>
                         <ul class="dropdown-menu dropdown-menu-right" role="menu">
-                            <li><a href="' . route('warranty-claims.show', $r->id) . '" class="btn-modal" data-container=".view_modal"><i class="fa fa-eye"></i> Ver</a></li>
+                            <li><a href="#" data-href="' . route('warranty-claims.show', $r->id) . '" class="btn-modal" data-container=".view_modal"><i class="fa fa-eye"></i> Ver</a></li>
                             <li><a href="' . route('warranty-claims.print', $r->id) . '" target="_blank"><i class="fa fa-print"></i> Imprimir ticket</a></li>';
                     if ($r->status !== 'cancelled') {
                         $html .= '<li><a href="#" class="cancel-warranty" data-href="' . route('warranty-claims.cancel', $r->id) . '"><i class="fa fa-times"></i> Cancelar</a></li>';
