@@ -29,6 +29,31 @@ class Contact extends Authenticatable
     ];
 
     /**
+     * Auto-genera membership_no para clientes de la app Celfix Socios.
+     * Se dispara SOLO cuando type in (customer, both) y membership_no está vacío,
+     * después del INSERT (para tener el id). Formato: '9001' + id con padding a 6.
+     * Ej: contact.id=42 → membership_no='9001000042'.
+     *
+     * Todo dentro de try/catch: si esto falla NUNCA debe romper la creación del
+     * contact — el cajero tiene que poder terminar la venta pase lo que pase.
+     */
+    protected static function booted()
+    {
+        static::created(function ($contact) {
+            try {
+                if (empty($contact->membership_no)
+                    && in_array($contact->type, ['customer', 'both'])
+                    && \Schema::hasColumn('contacts', 'membership_no')) {
+                    $contact->membership_no = '9001' . str_pad($contact->id, 6, '0', STR_PAD_LEFT);
+                    $contact->saveQuietly();
+                }
+            } catch (\Throwable $e) {
+                \Log::warning('membership_no auto-assign failed for contact ' . ($contact->id ?? '?') . ': ' . $e->getMessage());
+            }
+        });
+    }
+
+    /**
      * Get the business that owns the user.
      */
     public function business()
