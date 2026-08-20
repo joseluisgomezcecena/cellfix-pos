@@ -219,6 +219,41 @@
                                         <span class="display_currency" data-currency_symbol="true">{{ $day['total_expenses'] }}</span>
                                     </td>
                                 </tr>
+
+                                {{-- Cálculo del faltante REAL: solo cuando el cajero
+                                     capturó su conteo. Efectivo esperado = ventas cash
+                                     ya neteadas de cambio, menos los gastos que salieron
+                                     del cajón. El faltante real = contado − esperado.
+                                     Antes el gerente veía "diferencia -$16,240" y creía
+                                     que era faltante puro, cuando la mayor parte eran
+                                     gastos legítimos ya pagados. --}}
+                                @if($day['vendor_cash_has_data'] ?? false)
+                                    @php
+                                        $efectivo_esperado = $day['total_cash'] - $day['total_expenses'];
+                                        $faltante_real     = $day['vendor_cash_count'] - $efectivo_esperado;
+                                    @endphp
+                                    <tr style="background-color:#e8f5e9;">
+                                        <td>
+                                            <small>EFECTIVO ESPERADO</small><br>
+                                            <small><em style="color:#555;">(Ventas − Cambio − Gastos)</em></small>
+                                        </td>
+                                        <td class="text-right">
+                                            <span class="display_currency" data-currency_symbol="true">{{ $efectivo_esperado }}</span>
+                                        </td>
+                                    </tr>
+                                    <tr style="background-color:#e8f5e9;">
+                                        <td><small>EFECTIVO CONTADO POR CAJERO</small></td>
+                                        <td class="text-right">
+                                            <span class="display_currency" data-currency_symbol="true">{{ $day['vendor_cash_count'] }}</span>
+                                        </td>
+                                    </tr>
+                                    <tr style="background-color: {{ abs($faltante_real) < 0.5 ? '#c8e6c9' : ($faltante_real < 0 ? '#ef9a9a' : '#a5d6a7') }}; font-weight: bold;">
+                                        <td>FALTANTE REAL</td>
+                                        <td class="text-right">
+                                            <span class="display_currency" data-currency_symbol="true">{{ $faltante_real }}</span>
+                                        </td>
+                                    </tr>
+                                @endif
                             </tbody>
                         </table>
                     </div>
