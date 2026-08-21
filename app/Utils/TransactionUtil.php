@@ -648,9 +648,21 @@ class TransactionUtil extends Util
             'sub_unit_id' => ! empty($product['sub_unit_id']) ? $product['sub_unit_id'] : null,
             'res_service_staff_id' => ! empty($product['res_service_staff_id']) ? $product['res_service_staff_id'] : null,
             'secondary_unit_quantity' => ! empty($product['secondary_unit_quantity']) ? $this->num_uf($product['secondary_unit_quantity']) : 0,
-            'technician_id' => ! empty($product['technician_id']) ? $product['technician_id'] : null,
-            'repair_entry_date' => ! empty($product['repair_entry_date']) ? $product['repair_entry_date'] : null,
-            'repair_anticipo' => ! empty($product['repair_anticipo']) ? (float) $product['repair_anticipo'] : null,
+            // Fix Celfix: conservar campos de reparación si el form no los envía.
+            // El form del POS normal (/sells/edit) no incluye technician_id ni los
+            // repair_*, por lo que la lógica original los sobreescribía con null y
+            // dejaba a la reparación "en limbo" (repair_status=pending pero sin
+            // técnico asignado en las líneas). Ahora: si el key viene en el input
+            // se respeta (incluso vacío = "quitar"); si no viene, se conserva.
+            'technician_id' => array_key_exists('technician_id', $product)
+                ? (! empty($product['technician_id']) ? $product['technician_id'] : null)
+                : $sell_line->technician_id,
+            'repair_entry_date' => array_key_exists('repair_entry_date', $product)
+                ? (! empty($product['repair_entry_date']) ? $product['repair_entry_date'] : null)
+                : $sell_line->repair_entry_date,
+            'repair_anticipo' => array_key_exists('repair_anticipo', $product)
+                ? (! empty($product['repair_anticipo']) ? (float) $product['repair_anticipo'] : null)
+                : $sell_line->repair_anticipo,
         ]);
         $sell_line->save();
 
