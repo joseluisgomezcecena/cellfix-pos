@@ -182,6 +182,71 @@ Notas:
 
 ### 4.2 Auth
 
+#### `POST /api/v1/auth/register`
+
+Body:
+```json
+{
+  "mobile": "6861234567",
+  "name": "Juan Pérez",
+  "password": "miPass123",
+  "password_confirmation": "miPass123"
+}
+```
+
+Público, rate-limitado a **3 intentos/min por IP** para frenar registros masivos.
+
+**Comportamiento:**
+
+- **Cliente nuevo** (mobile no está en el POS) → crea el Contact como customer del business 2, genera bearer token y auto-login:
+
+  ```json
+  // HTTP 201
+  {
+    "success": true,
+    "message": "Registro exitoso. Bienvenido a Celfix Socios.",
+    "token": "abc123...60 chars",
+    "customer": {
+      "id": 42,
+      "name": "Juan Pérez",
+      "mobile": "6861234567",
+      "email": null,
+      "membership_no": "9001000042",
+      "membership_expires_at": null
+    }
+  }
+  ```
+
+  El `membership_no` se auto-genera por el hook `booted()` del modelo Contact.
+
+- **Cliente ya registrado** (mobile ya existe) → devuelve `409 Conflict`:
+
+  ```json
+  // HTTP 409
+  {
+    "success": false,
+    "code": "already_registered",
+    "message": "Este número ya está registrado. Te enviaremos un SMS para recuperar el acceso."
+  }
+  ```
+
+  El backend **loguea la intención** de enviar SMS (`storage/logs/laravel.log`) — hoy es SIMULADO, sin envío real. Cuando se contrate Twilio (o equivalente) se activa el envío. No se revela información privada del cliente existente.
+
+- **Validaciones (HTTP 422):**
+  - `mobile` < 10 dígitos → "Ingresa un teléfono válido de 10 dígitos."
+  - `name` vacío → "El nombre es obligatorio."
+  - `password` < 6 chars → "La contraseña debe tener al menos 6 caracteres."
+  - `password ≠ password_confirmation` → "La confirmación de la contraseña no coincide."
+
+**Flow sugerido en la app:**
+
+1. Usuario llena teléfono, nombre y password
+2. POST `/register`
+3. Si `201` → guardar `token`, ir a Home
+4. Si `409 already_registered` → mostrar mensaje "Ya está registrado — te enviamos SMS" y llevar a pantalla de login (o esperar el OTP cuando la Fase 2 esté lista)
+5. Si `422` → mostrar el `message` como error de formulario
+6. Si `429` → "Demasiados intentos, espera un minuto"
+
 #### `POST /api/v1/auth/login`
 
 Body:
@@ -532,8 +597,7 @@ Estos endpoints **NO** existen y hay que agregarlos si la app los necesita:
 
 | Endpoint | Uso pendiente |
 |---|---|
-| `POST /auth/register` | Auto-registro desde app (crear Contact) |
-| `POST /auth/request-otp` + `verify-otp` | Recuperar contraseña vía SMS |
+| `POST /auth/request-otp` + `verify-otp` | Recuperar contraseña vía SMS (Twilio) |
 | `GET /membership/qr` | QR/barcode del membership_no (opcional — se puede generar client-side) |
 | `POST /device-token` | Guardar FCM token para push |
 | `GET /notifications` | Historial de notificaciones al cliente |
