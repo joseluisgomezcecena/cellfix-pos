@@ -95,8 +95,6 @@
         @endphp
         @foreach($days as $key => $day)
             @php
-                $total_dinero = $day['total_cash'] + $day['total_card'] + $day['total_transfer'] + $day['total_cheque'];
-                $diff = $total_dinero - $day['total_sales'];
                 $week_total_sales += $day['total_sales'];
                 $week_total_cash += $day['total_cash'];
                 $week_total_card += $day['total_card'];
@@ -131,45 +129,60 @@
                                     </td>
                                 </tr>
 
-                                {{-- Métodos de pago --}}
+                                {{-- Nueva estructura: EFECTIVO ahora es BRUTO (sin restar cambio).
+                                     Cambio y Gastos se muestran como líneas separadas más abajo
+                                     y se restan en el TOTAL DINERO. La DIFERENCIA compara contra
+                                     el DINERO POR EL VENDEDOR (todo lo capturado manualmente). --}}
+                                @php
+                                    // total_cash guardado en la BD ya es NETO (bruto − cambio).
+                                    // Para el reporte nuevo mostramos el BRUTO: total_cash + cambio.
+                                    $efectivo_bruto = $day['total_cash'] + $day['cambio_entregado'];
+                                    $subtotal_dinero = $efectivo_bruto + $day['total_card'] + $day['total_transfer'] + $day['total_cheque'];
+                                    $total_dinero_new = $subtotal_dinero - $day['cambio_entregado'] - $day['total_expenses'];
+                                    $diff_new = $day['vendor_total_manual'] - $total_dinero_new;
+                                @endphp
                                 <tr>
                                     <td>EFECTIVO</td>
                                     <td class="text-right">
-                                        <span class="display_currency" data-currency_symbol="true">{{ $day['total_cash'] }}</span>
+                                        <span class="display_currency" data-currency_symbol="true">{{ $efectivo_bruto }}</span>
                                     </td>
                                 </tr>
-                                {{-- Conteo manual del cajero: suma total en MXN de billetes que él capturó
-                                     en /daily-cuts/denominations. Aparece SIEMPRE (aunque sea $0) cuando
-                                     hay datos capturados; el gerente lo cruza con EFECTIVO del sistema. --}}
-                                @if($day['vendor_cash_has_data'] ?? false)
-                                    <tr style="background-color:#fffbe6;">
-                                        <td style="padding-left:18px;"><small><em>↳ Efectivo por el vendedor</em></small></td>
-                                        <td class="text-right">
-                                            <small>
-                                                <span class="display_currency" data-currency_symbol="true">{{ $day['vendor_cash_count'] }}</span>
-                                                @php $diff = $day['vendor_cash_count'] - $day['total_cash']; @endphp
-                                                @if(abs($diff) >= 0.5)
-                                                    <span style="color:{{ $diff > 0 ? '#2e7d32' : '#c62828' }}; font-weight:bold;">
-                                                        ({{ $diff > 0 ? '+' : '' }}${{ number_format($diff, 2) }})
-                                                    </span>
-                                                @endif
-                                            </small>
-                                        </td>
-                                    </tr>
-                                @endif
                                 <tr style="background-color: #e3f2fd; font-weight: bold;">
                                     <td>TARJETA</td>
                                     <td class="text-right">
                                         <span class="display_currency" data-currency_symbol="true">{{ $day['total_card'] }}</span>
                                     </td>
                                 </tr>
+                                {{-- Orden solicitado: BANBAJIO, BANORTE, BANAMEX. El resto (si hay otras
+                                     terminales activas) va al final por su total desc. --}}
+                                @php
+                                    $ordered_banks = ['BANBAJIO', 'BANORTE', 'BANAMEX'];
+                                    $terminals_indexed = [];
+                                    foreach ($day['card_by_terminal'] as $t) {
+                                        $terminals_indexed[strtoupper($t['name'])] = $t['total'];
+                                    }
+                                    $printed_banks = [];
+                                @endphp
+                                @foreach($ordered_banks as $bank)
+                                    @if(isset($terminals_indexed[$bank]))
+                                        <tr>
+                                            <td style="padding-left: 20px;"><small>↳ {{ $bank }}</small></td>
+                                            <td class="text-right">
+                                                <small><span class="display_currency" data-currency_symbol="true">{{ $terminals_indexed[$bank] }}</span></small>
+                                            </td>
+                                        </tr>
+                                        @php $printed_banks[] = $bank; @endphp
+                                    @endif
+                                @endforeach
                                 @foreach($day['card_by_terminal'] as $t)
-                                    <tr>
-                                        <td style="padding-left: 20px;"><small>↳ {{ strtoupper($t['name']) }}</small></td>
-                                        <td class="text-right">
-                                            <small><span class="display_currency" data-currency_symbol="true">{{ $t['total'] }}</span></small>
-                                        </td>
-                                    </tr>
+                                    @if(!in_array(strtoupper($t['name']), $printed_banks))
+                                        <tr>
+                                            <td style="padding-left: 20px;"><small>↳ {{ strtoupper($t['name']) }}</small></td>
+                                            <td class="text-right">
+                                                <small><span class="display_currency" data-currency_symbol="true">{{ $t['total'] }}</span></small>
+                                            </td>
+                                        </tr>
+                                    @endif
                                 @endforeach
                                 @php
                                     $terminals_sum = collect($day['card_by_terminal'])->sum('total');
@@ -189,69 +202,79 @@
                                         <span class="display_currency" data-currency_symbol="true">{{ $day['total_transfer'] }}</span>
                                     </td>
                                 </tr>
-                                @if($day['total_cheque'] > 0)
-                                    <tr>
-                                        <td>CHEQUES</td>
-                                        <td class="text-right">
-                                            <span class="display_currency" data-currency_symbol="true">{{ $day['total_cheque'] }}</span>
-                                        </td>
-                                    </tr>
-                                @endif
-                                <tr style="background-color: #f0c000; font-weight: bold;">
-                                    <td>TOTAL DINERO</td>
+                                <tr>
+                                    <td>CHEQUES</td>
                                     <td class="text-right">
-                                        <span class="display_currency" data-currency_symbol="true">{{ $total_dinero }}</span>
+                                        <span class="display_currency" data-currency_symbol="true">{{ $day['total_cheque'] }}</span>
                                     </td>
                                 </tr>
 
-                                {{-- Diferencia (verificación de caja) --}}
-                                <tr style="background-color: {{ $diff < 0 ? '#fcc' : ($diff > 0 ? '#cfc' : '#eee') }};">
-                                    <td>@lang('lang_v1.difference')</td>
+                                {{-- Subtotal Dinero (SISTEMA): efectivo bruto + tarjeta + transfer + cheque.
+                                     Es lo que "entró" según el sistema, antes de restar cambio y gastos. --}}
+                                <tr style="background-color: #fff9c4; font-weight: bold;">
+                                    <td>SUBTOTAL DINERO</td>
                                     <td class="text-right">
-                                        <span class="display_currency" data-currency_symbol="true">{{ $diff }}</span>
+                                        <span class="display_currency" data-currency_symbol="true">{{ $subtotal_dinero }}</span>
                                     </td>
                                 </tr>
 
-                                {{-- Gastos --}}
+                                {{-- Dinero por el vendedor: TODO lo capturado manualmente por el cajero
+                                     (efectivo + terminales manuales + transfer manual + cheque manual).
+                                     Aparece siempre; si no capturó nada sale $0. --}}
+                                <tr style="background-color: #fff9c4;">
+                                    <td>
+                                        <small>DINERO POR EL VENDEDOR</small><br>
+                                        <small><em style="color:#555;">(captura manual)</em></small>
+                                    </td>
+                                    <td class="text-right">
+                                        <span class="display_currency" data-currency_symbol="true">{{ $day['vendor_total_manual'] }}</span>
+                                    </td>
+                                </tr>
+
+                                {{-- Salidas del cajón --}}
                                 <tr style="background-color: #fcc;">
                                     <td>GASTOS</td>
                                     <td class="text-right">
                                         <span class="display_currency" data-currency_symbol="true">{{ $day['total_expenses'] }}</span>
                                     </td>
                                 </tr>
+                                <tr style="background-color: #fcc;">
+                                    <td>CAMBIO ENTREGADO</td>
+                                    <td class="text-right">
+                                        <span class="display_currency" data-currency_symbol="true">{{ $day['cambio_entregado'] }}</span>
+                                    </td>
+                                </tr>
 
-                                {{-- Cálculo del faltante REAL: solo cuando el cajero
-                                     capturó su conteo. Efectivo esperado = ventas cash
-                                     ya neteadas de cambio, menos los gastos que salieron
-                                     del cajón. El faltante real = contado − esperado.
-                                     Antes el gerente veía "diferencia -$16,240" y creía
-                                     que era faltante puro, cuando la mayor parte eran
-                                     gastos legítimos ya pagados. --}}
-                                @if($day['vendor_cash_has_data'] ?? false)
-                                    @php
-                                        $efectivo_esperado = $day['total_cash'] - $day['total_expenses'];
-                                        $faltante_real     = $day['vendor_cash_count'] - $efectivo_esperado;
-                                    @endphp
-                                    <tr style="background-color:#e8f5e9;">
+                                {{-- Total Dinero final: SUBTOTAL − CAMBIO − GASTOS.
+                                     Este es lo que el sistema dice que debería estar físicamente en caja
+                                     entre efectivo + terminales + transferencias/cheques. --}}
+                                <tr style="background-color: #f0c000; font-weight: bold;">
+                                    <td>TOTAL DINERO</td>
+                                    <td class="text-right">
+                                        <span class="display_currency" data-currency_symbol="true">{{ $total_dinero_new }}</span>
+                                    </td>
+                                </tr>
+
+                                {{-- Diferencia final: DINERO POR VENDEDOR − TOTAL DINERO.
+                                     Positivo (verde) = cajero contó más de lo esperado (sobra).
+                                     Negativo (rojo) = cajero contó menos (falta).
+                                     Si no hay captura del cajero, se muestra en gris con leyenda
+                                     — no significa "falta $X", solo que no hay conteo aún. --}}
+                                @php $has_vendor_capture = ($day['vendor_cash_has_data'] ?? false) || $day['vendor_total_manual'] > 0; @endphp
+                                @if($has_vendor_capture)
+                                    <tr style="background-color: {{ abs($diff_new) < 0.5 ? '#c8e6c9' : ($diff_new < 0 ? '#ef9a9a' : '#a5d6a7') }}; font-weight: bold;">
+                                        <td>DIFERENCIA</td>
+                                        <td class="text-right">
+                                            <span class="display_currency" data-currency_symbol="true">{{ $diff_new }}</span>
+                                        </td>
+                                    </tr>
+                                @else
+                                    <tr style="background-color:#e0e0e0; color:#666;">
                                         <td>
-                                            <small>EFECTIVO ESPERADO</small><br>
-                                            <small><em style="color:#555;">(Ventas − Cambio − Gastos)</em></small>
+                                            DIFERENCIA
+                                            <br><small style="font-weight:normal; font-style:italic;">sin captura del cajero</small>
                                         </td>
-                                        <td class="text-right">
-                                            <span class="display_currency" data-currency_symbol="true">{{ $efectivo_esperado }}</span>
-                                        </td>
-                                    </tr>
-                                    <tr style="background-color:#e8f5e9;">
-                                        <td><small>EFECTIVO CONTADO POR CAJERO</small></td>
-                                        <td class="text-right">
-                                            <span class="display_currency" data-currency_symbol="true">{{ $day['vendor_cash_count'] }}</span>
-                                        </td>
-                                    </tr>
-                                    <tr style="background-color: {{ abs($faltante_real) < 0.5 ? '#c8e6c9' : ($faltante_real < 0 ? '#ef9a9a' : '#a5d6a7') }}; font-weight: bold;">
-                                        <td>FALTANTE REAL</td>
-                                        <td class="text-right">
-                                            <span class="display_currency" data-currency_symbol="true">{{ $faltante_real }}</span>
-                                        </td>
+                                        <td class="text-right">—</td>
                                     </tr>
                                 @endif
                             </tbody>

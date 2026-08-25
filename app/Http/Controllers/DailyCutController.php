@@ -334,16 +334,30 @@ class DailyCutController extends Controller
             $key = $date->toDateString();
             $day_cuts = $cuts_by_date->get($key, collect());
 
-            // Suma del conteo del vendedor para el día (todas las sucursales visibles).
-            // Restamos el cambio dado en efectivo para usar la misma fórmula que el
-            // sistema: MXN + USD*rate − cambio. Sin esto el conteo del cajero siempre
-            // salía inflado por el cambio y aparecía como "sobra" falsa.
+            // Sumas del conteo manual del cajero para el día.
+            // - vendor_cash_count: SOLO efectivo (billetes MXN + USD × rate), sin restar cambio.
+            //   El reporte nuevo ya no resta cambio aquí — se resta al calcular TOTAL DINERO.
+            // - vendor_total_manual: efectivo + terminales manuales + transfer manual + cheque manual.
+            //   Es el "DINERO POR EL VENDEDOR" del reporte semanal.
+            // - vendor_cambio_day: suma del cambio en efectivo del día (para descontarlo al comparar).
             $vc_day = $vendor_counts->get($key, collect());
-            $vc_total_mxn = 0;
+            $vc_cash = 0;
+            $vc_terminals = 0;
+            $vc_transfer = 0;
+            $vc_cheque = 0;
+            $cambio_day = 0;
             foreach ($vc_day as $vc) {
-                $cambio = $this->getCashChangeForDay($business_id, $vc->location_id, $key);
-                $vc_total_mxn += $vc->totalInMxn() - $cambio;
+                $vc_cash      += $vc->totalInMxn();
+                $vc_terminals += $vc->terminalsManualSum();
+                $vc_transfer  += (float) ($vc->transfer_manual ?? 0);
+                $vc_cheque    += (float) ($vc->cheque_manual ?? 0);
+                $cambio_day   += $this->getCashChangeForDay($business_id, $vc->location_id, $key);
             }
+            // Si no hay conteo por vendedor todavía, cambio_day se calcula a nivel día completo.
+            if ($vc_day->isEmpty()) {
+                $cambio_day = $this->getCashChangeForDay($business_id, $specific_loc_id ?: 'all', $key);
+            }
+            $vendor_total_manual = $vc_cash + $vc_terminals + $vc_transfer + $vc_cheque;
 
             $days[$key] = [
                 'date' => $date,
@@ -356,8 +370,13 @@ class DailyCutController extends Controller
                 'total_expenses' => $day_cuts->sum('total_expenses'),
                 'sales_by_brand' => $this->mergeBrandTotals($day_cuts),
                 'card_by_terminal' => $this->mergeTerminalTotals($day_cuts),
-                'vendor_cash_count' => $vc_total_mxn,
+                'vendor_cash_count' => $vc_cash,
+                'vendor_terminals_manual' => $vc_terminals,
+                'vendor_transfer_manual' => $vc_transfer,
+                'vendor_cheque_manual' => $vc_cheque,
+                'vendor_total_manual' => $vendor_total_manual,
                 'vendor_cash_has_data' => $vc_day->isNotEmpty(),
+                'cambio_entregado' => $cambio_day,
             ];
         }
 
@@ -519,6 +538,8 @@ class DailyCutController extends Controller
             $row_terminals_total = array_sum($row_terminals);
             $row_transfer = $day_cuts->sum('total_transfer');
             $row_cheque = $day_cuts->sum('total_cheque');
+            // Gastos del día — se usan en el nuevo TOTAL DINERO como salida del cajón.
+            $row_expenses = (float) $day_cuts->sum('total_expenses');
             $row_total_dinero = $row_total_cash + $row_total_card + $row_transfer + $row_cheque;
 
             $rows[] = [
@@ -538,6 +559,7 @@ class DailyCutController extends Controller
                 'terminals_total' => $row_terminals_total,
                 'transfer' => $row_transfer,
                 'cheque' => $row_cheque,
+                'expenses' => $row_expenses,
                 'total_dinero' => $row_total_dinero,
             ];
 
@@ -562,6 +584,7 @@ class DailyCutController extends Controller
             $totals['terminals_total'] += $row_terminals_total;
             $totals['transfer'] += $row_transfer;
             $totals['cheque'] += $row_cheque;
+            $totals['expenses'] = ($totals['expenses'] ?? 0) + $row_expenses;
             $totals['total_dinero'] += $row_total_dinero;
         }
 
@@ -648,6 +671,11 @@ class DailyCutController extends Controller
             'usd_counts' => 'nullable|array',
             'usd_coins' => 'nullable|numeric|min:0',
             'usd_exchange_rate' => 'nullable|numeric|min:0',
+            // Terminales / transfer / cheque manuales del cajero (para poder empatar
+            // si hay diferencia con el sistema — normalmente vienen a 0).
+            'terminals_manual' => 'nullable|array',
+            'transfer_manual' => 'nullable|numeric|min:0',
+            'cheque_manual' => 'nullable|numeric|min:0',
             'note' => 'nullable|string|max:500',
         ]);
 
@@ -671,6 +699,18 @@ class DailyCutController extends Controller
             return $out;
         };
 
+        // Limpia el mapa de terminales: solo nombres string con monto numérico >= 0.
+        $clean_terminals = function ($arr) {
+            $out = [];
+            if (!is_array($arr)) return $out;
+            foreach ($arr as $bank => $amount) {
+                if (!is_string($bank) || $bank === '') continue;
+                $v = (float) $amount;
+                if ($v > 0) $out[$bank] = $v;
+            }
+            return $out;
+        };
+
         \App\DailyCutVendorCount::updateOrCreate(
             [
                 'business_id' => $business_id,
@@ -683,6 +723,9 @@ class DailyCutController extends Controller
                 'usd_counts' => $clean($request->input('usd_counts')),
                 'usd_coins' => (float) $request->input('usd_coins', 0),
                 'usd_exchange_rate' => $request->input('usd_exchange_rate') ? (float) $request->input('usd_exchange_rate') : null,
+                'terminals_manual' => $clean_terminals($request->input('terminals_manual')),
+                'transfer_manual' => (float) $request->input('transfer_manual', 0),
+                'cheque_manual' => (float) $request->input('cheque_manual', 0),
                 'note' => $request->input('note'),
                 'updated_by' => auth()->id(),
                 'created_by' => auth()->id(),

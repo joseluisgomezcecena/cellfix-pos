@@ -85,15 +85,14 @@
                         <th rowspan="2">@lang('messages.date')</th>
                         <th colspan="{{ count($mxn_faces) + 2 }}" class="group-mxn">PESOS (MXN)</th>
                         <th colspan="{{ count($usd_faces) + 3 }}" class="group-usd">DÓLARES (USD)</th>
-                        <th rowspan="2" class="total-cell" title="Suma de efectivo pesos + dólares — SIN restar cambio">TOTAL EFECTIVO</th>
+                        <th rowspan="2" style="background-color:#ffccbc; color:#bf360c;" title="Cambio dado como vuelto en efectivo — sale del cajón">CAMBIO EFECTIVO</th>
+                        <th rowspan="2" class="total-cell">@lang('lang_v1.total_cash')</th>
                         <th rowspan="2" style="background-color: #bbdefb;">TARJETA</th>
                         @foreach($terminal_names as $name)
                             <th rowspan="2" class="group-terminal">{{ strtoupper($name) }}</th>
                         @endforeach
                         <th rowspan="2">TRANSFER.</th>
                         <th rowspan="2">CHEQUE</th>
-                        <th rowspan="2" style="background-color:#ffccbc; color:#bf360c;" title="Cambio dado como vuelto en efectivo — sale del cajón">CAMBIO EFECTIVO</th>
-                        <th rowspan="2" style="background-color:#ffccbc; color:#bf360c;" title="Gastos del día — salen del cajón">GASTOS</th>
                         <th rowspan="2" class="grand-total-row">TOTAL DINERO</th>
                     </tr>
                     <tr>
@@ -110,10 +109,7 @@
                         <th class="group-usd">CONV. MXN</th>
                     </tr>
                 </thead>
-                @php
-                    // Fecha=1 | MXN faces + coins + subtotal | USD faces + coins + subtotal + conv | TOTAL EFECTIVO=1 | TARJETA=1 | terminales | TRANSFER + CHEQUE + CAMBIO + GASTOS + TOTAL DINERO = 5
-                    $total_cols = 1 + count($mxn_faces) + 2 + count($usd_faces) + 3 + 1 + 1 + count($terminal_names) + 5;
-                @endphp
+                @php $total_cols = 1 + count($mxn_faces) + 2 + count($usd_faces) + 3 + 2 + 1 + count($terminal_names) + 3; @endphp
                 @foreach($rows as $row_index => $row)
                     @php $date_key = $row['date']->toDateString(); $vc = ($vendor_counts_by_date ?? [])[$date_key] ?? null; @endphp
                     @if($row_index > 0)
@@ -153,16 +149,13 @@
                             <td class="text-right group-usd">
                                 <span class="display_currency" data-currency_symbol="true">{{ $row['usd_in_mxn'] }}</span>
                             </td>
-                            {{-- TOTAL EFECTIVO nuevo = bruto puro (MXN + USD*rate), SIN restar cambio.
-                                 Antes se restaba y confundía porque el cambio ya vive en columna aparte. --}}
-                            @php
-                                $sys_efectivo_bruto = (float) $row['mxn_subtotal'] + (float) $row['usd_in_mxn'];
-                                // Gastos del día de esta sucursal / total.
-                                $sys_gastos = $row['expenses'] ?? 0;
-                                $sys_total_dinero_new = $sys_efectivo_bruto + (float) $row['total_card'] + (float) $row['transfer'] + (float) $row['cheque'] - (float) $row['cambio_cash'] - (float) $sys_gastos;
-                            @endphp
+                            <td class="text-right" style="background-color:#ffe0b2; color:#bf360c;">
+                                @if($row['cambio_cash'] > 0)
+                                    −<span class="display_currency" data-currency_symbol="true">{{ $row['cambio_cash'] }}</span>
+                                @endif
+                            </td>
                             <td class="text-right total-cell">
-                                <span class="display_currency" data-currency_symbol="true">{{ $sys_efectivo_bruto }}</span>
+                                <span class="display_currency" data-currency_symbol="true">{{ $row['total_cash'] }}</span>
                             </td>
                             <td class="text-right" style="background-color: #bbdefb; font-weight: bold;">
                                 <span class="display_currency" data-currency_symbol="true">{{ $row['total_card'] }}</span>
@@ -178,18 +171,8 @@
                             <td class="text-right">
                                 <span class="display_currency" data-currency_symbol="true">{{ $row['cheque'] }}</span>
                             </td>
-                            <td class="text-right" style="background-color:#ffe0b2; color:#bf360c;">
-                                @if($row['cambio_cash'] > 0)
-                                    −<span class="display_currency" data-currency_symbol="true">{{ $row['cambio_cash'] }}</span>
-                                @endif
-                            </td>
-                            <td class="text-right" style="background-color:#ffe0b2; color:#bf360c;">
-                                @if($sys_gastos > 0)
-                                    −<span class="display_currency" data-currency_symbol="true">{{ $sys_gastos }}</span>
-                                @endif
-                            </td>
                             <td class="text-right grand-total-row">
-                                <span class="display_currency" data-currency_symbol="true">{{ $sys_total_dinero_new }}</span>
+                                <span class="display_currency" data-currency_symbol="true">{{ $row['total_dinero'] }}</span>
                             </td>
                         </tr>
                         {{-- FILA CAJERO: inputs manuales para que el cajero capture su conteo físico.
@@ -233,57 +216,27 @@
                                 </td>
                                 <td class="text-right group-usd vc-usd-subtotal" style="font-weight:bold;">$0.00</td>
                                 <td class="text-right group-usd vc-usd-mxn">
-                                    {{-- Tipo de cambio: input arriba, resultado (USD × rate) abajo.
-                                         Antes solo mostraba el input; el resultado vivía en la fila
-                                         del sistema y era difícil de ver de un vistazo. --}}
+                                    {{-- Rate USD→MXN. Si no hay conteo guardado, arranca con el
+                                         tipo de cambio actual del negocio para que el cajero no
+                                         tenga que teclearlo (y evite dejarlo en 0 = dólares no cuentan). --}}
                                     <input type="number" min="0" step="0.01"
                                         class="form-control input-sm vc-rate text-right"
                                         placeholder="rate" style="width:70px; padding:2px; font-size:11px;"
                                         title="Tipo de cambio USD → MXN"
                                         value="{{ $vc && $vc->usd_exchange_rate ? $vc->usd_exchange_rate : ($default_exchange_rate ?: '') }}">
-                                    <div class="vc-usd-in-mxn" style="margin-top:3px; font-weight:bold; font-size:11px; color:#0d47a1;">$0.00</div>
                                 </td>
-                                {{-- TOTAL EFECTIVO del cajero (bruto, sin restar cambio). --}}
+                                {{-- El resto de columnas no aplican al conteo de billetes (cambio,
+                                     total_card, terminals, transfer, cheque). Mostramos el TOTAL
+                                     CAJERO en la última columna para comparar con TOTAL DINERO del sistema. --}}
+                                <td></td>
                                 <td class="text-right total-cell vc-total-cash" style="font-weight:bold; color:#2e7d32;">$0.00</td>
-                                {{-- Inputs manuales de TARJETA / terminales / transfer / cheque —
-                                     por si el cajero necesita "empatar" cuando el sistema y su
-                                     conteo no coinciden (raro pero pasa). --}}
-                                <td class="text-right">
-                                    <input type="number" min="0" step="0.01"
-                                        class="form-control input-sm vc-tarjeta-total text-right"
-                                        placeholder="0.00" style="width:80px; padding:2px; font-size:11px;"
-                                        title="Tarjeta total manual"
-                                        value="">
-                                </td>
-                                @foreach($terminal_names as $name)
-                                    <td class="text-right">
-                                        <input type="number" min="0" step="0.01"
-                                            class="form-control input-sm vc-terminal text-right"
-                                            data-terminal="{{ $name }}"
-                                            placeholder="0.00" style="width:80px; padding:2px; font-size:11px;"
-                                            title="{{ $name }} manual"
-                                            value="{{ $vc && isset($vc->terminals_manual[$name]) ? $vc->terminals_manual[$name] : '' }}">
-                                    </td>
-                                @endforeach
-                                <td class="text-right">
-                                    <input type="number" min="0" step="0.01"
-                                        class="form-control input-sm vc-transfer text-right"
-                                        placeholder="0.00" style="width:80px; padding:2px; font-size:11px;"
-                                        title="Transferencia manual"
-                                        value="{{ $vc && $vc->transfer_manual > 0 ? $vc->transfer_manual : '' }}">
-                                </td>
-                                <td class="text-right">
-                                    <input type="number" min="0" step="0.01"
-                                        class="form-control input-sm vc-cheque text-right"
-                                        placeholder="0.00" style="width:80px; padding:2px; font-size:11px;"
-                                        title="Cheque manual"
-                                        value="{{ $vc && $vc->cheque_manual > 0 ? $vc->cheque_manual : '' }}">
-                                </td>
-                                {{-- Cambio y Gastos NO se capturan por el cajero: vienen del sistema
-                                     y solo se muestran arriba. Aquí quedan vacíos. --}}
+                                <td></td>
+                                @foreach($terminal_names as $name)<td></td>@endforeach
                                 <td></td>
                                 <td></td>
-                                <td class="text-right vc-total-dinero" style="background-color:#c8e6c9; font-weight:bold; color:#1b5e20;">$0.00</td>
+                                <td class="text-right" style="background-color:#c8e6c9; font-weight:bold; color:#1b5e20;">
+                                    <small>TOTAL<br>CAJERO</small>
+                                </td>
                             </tr>
                         @endif
                     </tbody>
@@ -306,16 +259,13 @@
                         <td class="text-right group-usd">
                             <span class="display_currency" data-currency_symbol="true">{{ $totals['usd_in_mxn'] }}</span>
                         </td>
-                        {{-- Totales semanales con el mismo layout que las filas del sistema:
-                             TOTAL EFECTIVO bruto, tarjeta/terminales/transfer/cheque, luego
-                             cambio y gastos como salidas, y TOTAL DINERO recalculado. --}}
-                        @php
-                            $totals_efectivo_bruto = (float) $totals['mxn_subtotal'] + (float) $totals['usd_in_mxn'];
-                            $totals_gastos = $totals['expenses'] ?? 0;
-                            $totals_total_dinero_new = $totals_efectivo_bruto + (float) $totals['total_card'] + (float) $totals['transfer'] + (float) $totals['cheque'] - (float) ($totals['cambio_cash'] ?? 0) - (float) $totals_gastos;
-                        @endphp
+                        <td class="text-right" style="background-color:#ffab91; color:#bf360c;">
+                            @if(($totals['cambio_cash'] ?? 0) > 0)
+                                −<span class="display_currency" data-currency_symbol="true">{{ $totals['cambio_cash'] }}</span>
+                            @endif
+                        </td>
                         <td class="text-right total-cell">
-                            <span class="display_currency" data-currency_symbol="true">{{ $totals_efectivo_bruto }}</span>
+                            <span class="display_currency" data-currency_symbol="true">{{ $totals['total_cash'] }}</span>
                         </td>
                         <td class="text-right" style="background-color: #bbdefb; font-weight: bold;">
                             <span class="display_currency" data-currency_symbol="true">{{ $totals['total_card'] }}</span>
@@ -331,18 +281,8 @@
                         <td class="text-right">
                             <span class="display_currency" data-currency_symbol="true">{{ $totals['cheque'] }}</span>
                         </td>
-                        <td class="text-right" style="background-color:#ffab91; color:#bf360c;">
-                            @if(($totals['cambio_cash'] ?? 0) > 0)
-                                −<span class="display_currency" data-currency_symbol="true">{{ $totals['cambio_cash'] }}</span>
-                            @endif
-                        </td>
-                        <td class="text-right" style="background-color:#ffab91; color:#bf360c;">
-                            @if($totals_gastos > 0)
-                                −<span class="display_currency" data-currency_symbol="true">{{ $totals_gastos }}</span>
-                            @endif
-                        </td>
                         <td class="text-right">
-                            <span class="display_currency" data-currency_symbol="true">{{ $totals_total_dinero_new }}</span>
+                            <span class="display_currency" data-currency_symbol="true">{{ $totals['total_dinero'] }}</span>
                         </td>
                     </tr>
                 </tfoot>
@@ -422,10 +362,9 @@ $(document).ready(function () {
     });
 
     // Recalcula subtotales de la fila del cajero en vivo mientras escribe.
-    // Nueva fórmula:
-    //   TOTAL EFECTIVO CAJERO = MXN + USD*rate  (bruto, SIN restar cambio)
-    //   TOTAL DINERO CAJERO   = Efectivo + Tarjeta + Terminales + Transfer + Cheque
-    // Cambio y gastos NO se restan en la fila del cajero — son datos del sistema.
+    // TOTAL CAJERO = MXN + USD*rate − cambio_efectivo — misma fórmula que el
+    // sistema (fila blanca arriba). Sin restar cambio, capturar los mismos
+    // billetes que el sistema arrojaría siempre una diferencia positiva.
     function recalcRow($row) {
         var mxn = 0;
         $row.find('.vc-mxn').each(function () {
@@ -438,37 +377,18 @@ $(document).ready(function () {
         });
         usd += parseFloat($row.find('.vc-usd-coins').val()) || 0;
         var rate = parseFloat($row.find('.vc-rate').val()) || 0;
-        var usd_in_mxn = usd * rate;
-        // Efectivo bruto = pesos + dólares convertidos.
-        var efectivo_bruto = mxn + usd_in_mxn;
-        // Métodos no-efectivo que el cajero captura manualmente.
-        var tarjeta = parseFloat($row.find('.vc-tarjeta-total').val()) || 0;
-        var terminales_sum = 0;
-        $row.find('.vc-terminal').each(function () {
-            terminales_sum += parseFloat($(this).val()) || 0;
-        });
-        // Si el cajero llena las terminales (por banco) usamos la suma de esas;
-        // si solo llena "TARJETA" en total, usamos ese. Prioridad a lo más específico.
-        var tarjeta_efectiva = terminales_sum > 0 ? terminales_sum : tarjeta;
-        var transfer = parseFloat($row.find('.vc-transfer').val()) || 0;
-        var cheque = parseFloat($row.find('.vc-cheque').val()) || 0;
-        var total_dinero = efectivo_bruto + tarjeta_efectiva + transfer + cheque;
-
+        var cambio = parseFloat($row.data('cambio')) || 0;
+        var total = mxn + (usd * rate) - cambio;
         $row.find('.vc-mxn-subtotal').text('$' + mxn.toFixed(2));
         $row.find('.vc-usd-subtotal').text('$' + usd.toFixed(2));
-        $row.find('.vc-usd-in-mxn').text('$' + usd_in_mxn.toFixed(2));
-        $row.find('.vc-total-cash').text('$' + efectivo_bruto.toFixed(2));
-        $row.find('.vc-total-dinero').text('$' + total_dinero.toFixed(2));
+        $row.find('.vc-total-cash').text('$' + total.toFixed(2));
     }
     // Init subtotales al cargar la página
     $('.vc-row').each(function () { recalcRow($(this)); });
-    // Recalcular al cambio (incluye ahora terminales, transfer, cheque, tarjeta manual)
-    $(document).on('input change',
-        '.vc-row .vc-mxn, .vc-row .vc-usd, .vc-row .vc-mxn-coins, .vc-row .vc-usd-coins, .vc-row .vc-rate, ' +
-        '.vc-row .vc-terminal, .vc-row .vc-transfer, .vc-row .vc-cheque, .vc-row .vc-tarjeta-total',
-        function () {
-            recalcRow($(this).closest('.vc-row'));
-        });
+    // Recalcular al cambio
+    $(document).on('input change', '.vc-row .vc-mxn, .vc-row .vc-usd, .vc-row .vc-mxn-coins, .vc-row .vc-usd-coins, .vc-row .vc-rate', function () {
+        recalcRow($(this).closest('.vc-row'));
+    });
 
     // Guardar conteo del cajero de un día
     $(document).on('click', '.vc-save-btn', function () {
@@ -486,12 +406,6 @@ $(document).ready(function () {
             var v = parseInt($(this).val(), 10) || 0;
             if (v > 0) usd_counts[$(this).data('face')] = v;
         });
-        // Terminales manuales por nombre (BANBAJIO, BANORTE, BANAMEX, etc.)
-        var terminals_manual = {};
-        $row.find('.vc-terminal').each(function () {
-            var v = parseFloat($(this).val()) || 0;
-            if (v > 0) terminals_manual[$(this).data('terminal')] = v;
-        });
         $btn.prop('disabled', true).find('i').removeClass('fa-save').addClass('fa-spinner fa-spin');
         $.ajax({
             url: '{{ route("daily-cuts.vendor-counts") }}',
@@ -505,9 +419,6 @@ $(document).ready(function () {
                 usd_counts: usd_counts,
                 usd_coins: parseFloat($row.find('.vc-usd-coins').val()) || 0,
                 usd_exchange_rate: parseFloat($row.find('.vc-rate').val()) || null,
-                terminals_manual: terminals_manual,
-                transfer_manual: parseFloat($row.find('.vc-transfer').val()) || 0,
-                cheque_manual: parseFloat($row.find('.vc-cheque').val()) || 0,
             },
             dataType: 'json',
             success: function (r) {
