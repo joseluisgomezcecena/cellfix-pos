@@ -121,6 +121,26 @@
                 </label>
             </div>
         </div>
+
+        <div class="col-md-12" style="margin-top:6px;"><strong style="color:#2e7d32;">REPARACIÓN DE TIENDA (módulo aislado)</strong></div>
+        <div class="col-md-12">
+            <div class="checkbox">
+                <label>
+                    {!! Form::checkbox('permissions[]', 'celfix.store_repairs.access', in_array('celfix.store_repairs.access', $role_permissions ?? []), ['class' => 'input-icheck']); !!}
+                    Ver reparaciones de tienda
+                    <small class="text-muted">(sidebar: <em>Reparación de Tienda → Ver reparaciones</em>)</small>
+                </label>
+            </div>
+        </div>
+        <div class="col-md-12">
+            <div class="checkbox">
+                <label>
+                    {!! Form::checkbox('permissions[]', 'celfix.store_repairs.manage_commissions', in_array('celfix.store_repairs.manage_commissions', $role_permissions ?? []), ['class' => 'input-icheck']); !!}
+                    Editar comisión de reparación de tienda
+                    <small class="text-muted">(monto que gana el técnico; solo gerentes)</small>
+                </label>
+            </div>
+        </div>
     </div>
 </div>
 <hr>

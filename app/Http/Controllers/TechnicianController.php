@@ -432,6 +432,28 @@ class TechnicianController extends Controller
             }
         }
 
+        // Comisiones de REPARACIÓN DE TIENDA en el periodo (módulo aislado —
+        // vive en store_repairs, no crea transactions ni sell_lines). Se suma
+        // como columna aparte al resumen semanal de cada técnico.
+        $store_repair_commissions_by_tech = [];
+        if (\Schema::hasTable('store_repairs')) {
+            $sr_q = \DB::table('store_repairs')
+                ->where('business_id', $business_id)
+                ->whereBetween('created_at', [$start, $end])
+                ->whereIn('status', ['pending', 'in_progress', 'delivered'])
+                ->select('technician_id',
+                    \DB::raw('SUM(commission) as total_commission'),
+                    \DB::raw('COUNT(*) as repair_count'))
+                ->groupBy('technician_id')
+                ->get();
+            foreach ($sr_q as $r) {
+                $store_repair_commissions_by_tech[(int) $r->technician_id] = [
+                    'commission' => (float) $r->total_commission,
+                    'count' => (int) $r->repair_count,
+                ];
+            }
+        }
+
         // Group by technician → day
         $report = [];
         foreach ($technicians as $tech) {
@@ -512,6 +534,7 @@ class TechnicianController extends Controller
             // Restar penalizaciones por garantías registradas en el periodo
             $penalty = $warranty_penalty_by_tech[$tech->id] ?? ['amount' => 0, 'count' => 0];
 
+            $sr_info = $store_repair_commissions_by_tech[$tech->id] ?? ['commission' => 0, 'count' => 0];
             $report[] = [
                 'technician' => $tech,
                 'by_day' => $by_day,
@@ -522,7 +545,11 @@ class TechnicianController extends Controller
                 'commission_gross' => $week_commission,       // comisión bruta antes de penalizaciones
                 'warranty_penalty' => (float) $penalty['amount'],
                 'warranty_penalty_count' => (int) $penalty['count'],
-                'commission_due' => $week_commission - (float) $penalty['amount'],   // NETA (puede ser negativa)
+                // Módulo REPARACIÓN DE TIENDA — aislado del resto.
+                'store_repair_commission' => (float) $sr_info['commission'],
+                'store_repair_count' => (int) $sr_info['count'],
+                // Comisión total a pagar al técnico esta semana: bruta + reparación de tienda − penalización garantías
+                'commission_due' => $week_commission + (float) $sr_info['commission'] - (float) $penalty['amount'],
             ];
         }
 

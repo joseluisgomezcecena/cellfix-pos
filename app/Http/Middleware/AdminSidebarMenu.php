@@ -564,6 +564,44 @@ class AdminSidebarMenu
                 )->order(33);
             }
 
+            // Reparación de Tienda — módulo aislado del resto del sistema, con
+            // su propio listado y flujo. Se ve con permiso celfix.store_repairs.access,
+            // admin/gerente. Agregar solo admin/gerente.
+            $sr_can_see = auth()->user()->can('business_settings.access')
+                || auth()->user()->can('superadmin')
+                || auth()->user()->can('celfix.store_repairs.access');
+            if ($sr_can_see) {
+                $menu->dropdown(
+                    'Reparación de Tienda',
+                    function ($sub) {
+                        $sub->url(
+                            action([\App\Http\Controllers\StoreRepairController::class, 'index']),
+                            'Ver reparaciones',
+                            ['icon' => '', 'active' => request()->segment(1) == 'store-repairs' && request()->segment(2) == null]
+                        );
+                        if (auth()->user()->can('business_settings.access') || auth()->user()->can('superadmin')) {
+                            $sub->url(
+                                action([\App\Http\Controllers\StoreRepairController::class, 'create']),
+                                'Agregar reparación',
+                                ['icon' => '', 'active' => request()->segment(1) == 'store-repairs' && request()->segment(2) == 'create']
+                            );
+                        }
+                    },
+                    ['icon' => '<svg aria-hidden="true" class="tw-size-5 tw-shrink-0" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                    <path stroke="none" d="M0 0h24v24H0z" fill="none"></path>
+                    <path d="M4 21v-7"></path>
+                    <path d="M4 10v-7"></path>
+                    <path d="M12 21v-9"></path>
+                    <path d="M12 8v-5"></path>
+                    <path d="M20 21v-5"></path>
+                    <path d="M20 12v-9"></path>
+                    <path d="M1 14h6"></path>
+                    <path d="M9 8h6"></path>
+                    <path d="M17 16h6"></path>
+                  </svg>', 'id' => 'menu-store-repairs']
+                )->order(34);
+            }
+
             //Stock transfer dropdown
             if (in_array('stock_transfers', $enabled_modules) && (auth()->user()->can('purchase.view') || auth()->user()->can('purchase.create') || auth()->user()->can('view_own_purchase'))) {
                 $menu->dropdown(

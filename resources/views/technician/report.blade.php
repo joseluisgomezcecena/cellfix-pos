@@ -123,6 +123,18 @@
                             <span class="label" style="font-size: 14px; margin-left: 4px; background-color:#0288d1; color:#fff;">
                                 {{ $week_count }} reparaciones + servicios
                             </span>
+                            {{-- Reparación de tienda — módulo aislado. Siempre visible aunque sea 0. --}}
+                            @php
+                                $sr_count = $tech_data['store_repair_count'] ?? 0;
+                                $sr_commission = $tech_data['store_repair_commission'] ?? 0;
+                            @endphp
+                            <span class="label" style="font-size: 14px; margin-left: 4px; background-color:#00897b; color:#fff;"
+                                  title="Reparaciones de tienda registradas en el módulo Reparación de Tienda">
+                                {{ $sr_count }} rep. de tienda
+                                @if($sr_commission > 0)
+                                    (+<span class="display_currency" data-currency_symbol="true">{{ $sr_commission }}</span>)
+                                @endif
+                            </span>
                             <span class="label bg-green" style="font-size: 14px; margin-left: 4px;">
                                 Total: <span class="display_currency" data-currency_symbol="true">{{ $tech_data['week_total'] }}</span>
                             </span>
@@ -132,7 +144,7 @@
                                 $gross = $tech_data['commission_gross'] ?? $tech_data['commission_due'];
                                 $due = $tech_data['commission_due'];
                             @endphp
-                            @if($gross > 0 || $penalty > 0)
+                            @if($gross > 0 || $penalty > 0 || $sr_commission > 0)
                                 <span class="label bg-yellow" style="font-size: 14px; margin-left: 4px;">
                                     Comisión bruta: <span class="display_currency" data-currency_symbol="true">{{ $gross }}</span>
                                 </span>
@@ -144,7 +156,7 @@
                                     ({{ $penalty_count }})
                                 </span>
                             @endif
-                            @if($gross > 0 || $penalty > 0)
+                            @if($gross > 0 || $penalty > 0 || $sr_commission > 0)
                                 <span class="label" style="font-size: 14px; margin-left: 4px; background-color:{{ $due >= 0 ? '#2e7d32' : '#c62828' }}; color:#fff; font-weight:700;">
                                     Comisión neta: <span class="display_currency" data-currency_symbol="true">{{ $due }}</span>
                                 </span>
@@ -246,13 +258,25 @@
                                             <td class="text-right">{{ number_format($tech_data['commission_gross'] ?? $tech_data['commission_due'], 2) }}</td>
                                         @endif
                                     </tr>
-                                    @if($show_commission && ($tech_data['warranty_penalty'] ?? 0) > 0)
-                                        <tr style="background-color: #ffcdd2; color: #c62828; font-weight: bold;">
+                                    {{-- Comisión por REPARACIÓN DE TIENDA — módulo aislado.
+                                         Se muestra como línea aparte en el resumen semanal. --}}
+                                    @if($show_commission && ($tech_data['store_repair_commission'] ?? 0) > 0)
+                                        <tr style="background-color: #c8e6c9; color: #1b5e20; font-weight: bold;">
                                             <td colspan="{{ 13 + $extra_cols }}" class="text-right">
-                                                − Penalización por {{ $tech_data['warranty_penalty_count'] }} garantía(s) cobradas esta semana:
+                                                + Reparación de tienda ({{ $tech_data['store_repair_count'] }} reparación{{ $tech_data['store_repair_count'] == 1 ? '' : 'es' }}):
                                             </td>
-                                            <td class="text-right">−{{ number_format($tech_data['warranty_penalty'], 2) }}</td>
+                                            <td class="text-right">+{{ number_format($tech_data['store_repair_commission'], 2) }}</td>
                                         </tr>
+                                    @endif
+                                    @if($show_commission && (($tech_data['warranty_penalty'] ?? 0) > 0 || ($tech_data['store_repair_commission'] ?? 0) > 0))
+                                        @if(($tech_data['warranty_penalty'] ?? 0) > 0)
+                                            <tr style="background-color: #ffcdd2; color: #c62828; font-weight: bold;">
+                                                <td colspan="{{ 13 + $extra_cols }}" class="text-right">
+                                                    − Penalización por {{ $tech_data['warranty_penalty_count'] }} garantía(s) cobradas esta semana:
+                                                </td>
+                                                <td class="text-right">−{{ number_format($tech_data['warranty_penalty'], 2) }}</td>
+                                            </tr>
+                                        @endif
                                         <tr style="background-color: {{ ($tech_data['commission_due'] >= 0) ? '#2e7d32' : '#c62828' }}; color: white; font-weight: bold; font-size: 13px;">
                                             <td colspan="{{ 13 + $extra_cols }}" class="text-right">COMISIÓN NETA A PAGAR:</td>
                                             <td class="text-right">{{ number_format($tech_data['commission_due'], 2) }}</td>

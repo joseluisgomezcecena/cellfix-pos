@@ -393,6 +393,11 @@ Route::middleware(['setData', 'auth', 'SetSessionData', 'language', 'timezone', 
     Route::post('warranty-claims/{id}/cancel', [\App\Http\Controllers\WarrantyClaimController::class, 'cancel'])->name('warranty-claims.cancel');
     Route::resource('warranty-claims', \App\Http\Controllers\WarrantyClaimController::class)->except(['edit', 'update']);
 
+    // Reparación de tienda (módulo Celfix)
+    Route::get('store-repairs/search-imei', [\App\Http\Controllers\StoreRepairController::class, 'searchImei'])->name('store-repairs.search-imei');
+    Route::get('store-repairs/lookup-imei', [\App\Http\Controllers\StoreRepairController::class, 'lookupImei'])->name('store-repairs.lookup-imei');
+    Route::resource('store-repairs', \App\Http\Controllers\StoreRepairController::class);
+
     //Backup
     Route::get('backup/download/{file_name}', [BackUpController::class, 'download']);
     Route::get('backup/{id}/delete', [BackUpController::class, 'delete'])->name('delete_backup');
