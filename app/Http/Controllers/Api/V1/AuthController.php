@@ -72,6 +72,104 @@ class AuthController extends Controller
     }
 
     /**
+     * POST /api/v1/auth/register
+     * Body: { mobile, name, password, password_confirmation }
+     *
+     * Comportamiento:
+     *   - Si el mobile YA existe como customer/both → responde con "ya_registrado"
+     *     y simula el envío de un SMS de recuperación (por ahora solo log; cuando
+     *     se contrate Twilio se activa el envío real). NO revela nada del cliente.
+     *   - Si NO existe → crea el Contact (customer, business_id=2), hashea password,
+     *     genera token bearer. El hook `booted()` de Contact auto-genera membership_no.
+     *
+     * Rate-limitado en routes/api.php para frenar registros masivos / spam.
+     */
+    public function register(Request $request): JsonResponse
+    {
+        $mobile_raw = (string) $request->input('mobile', '');
+        $name       = trim((string) $request->input('name', ''));
+        $password   = (string) $request->input('password', '');
+        $confirm    = (string) $request->input('password_confirmation', '');
+        $mobile     = self::normalizeMobile($mobile_raw);
+
+        // Validaciones mínimas — devolvemos 422 con mensaje específico para cada caso
+        // porque son datos que el usuario proporciona, no credenciales secretas.
+        if ($mobile === '' || strlen($mobile) < 10) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Ingresa un teléfono válido de 10 dígitos.',
+            ], 422);
+        }
+        if ($name === '') {
+            return response()->json([
+                'success' => false,
+                'message' => 'El nombre es obligatorio.',
+            ], 422);
+        }
+        if (strlen($password) < 6) {
+            return response()->json([
+                'success' => false,
+                'message' => 'La contraseña debe tener al menos 6 caracteres.',
+            ], 422);
+        }
+        if ($password !== $confirm) {
+            return response()->json([
+                'success' => false,
+                'message' => 'La confirmación de la contraseña no coincide.',
+            ], 422);
+        }
+
+        // ¿Ya existe un cliente con ese mobile?
+        $existing = Contact::where('business_id', self::BUSINESS_ID)
+            ->whereIn('type', ['customer', 'both'])
+            ->where(function ($q) use ($mobile) {
+                $q->where('mobile', $mobile)
+                  ->orWhereRaw("REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(mobile,' ',''),'-',''),'(',''),')',''),'+','') LIKE ?", ['%' . $mobile])
+                  ->orWhere('alternate_number', $mobile);
+            })
+            ->first();
+
+        if ($existing) {
+            // SIMULACIÓN de SMS. Cuando se contrate Twilio (o equivalente), este
+            // bloque disparará el envío real; por ahora solo se registra el intento
+            // en el log de Laravel para poder auditar.
+            \Log::info('[app-auth] SMS SIMULADO — número ya registrado. Se enviaría SMS de recuperación a ' . $mobile . ' (contact_id=' . $existing->id . ')');
+
+            return response()->json([
+                'success' => false,
+                'code'    => 'already_registered',
+                'message' => 'Este número ya está registrado. Te enviaremos un SMS para recuperar el acceso.',
+            ], 409); // 409 Conflict — el recurso ya existe
+        }
+
+        // Alta nueva. El hook `booted()` del modelo genera membership_no automático.
+        $contact = Contact::create([
+            'business_id'    => self::BUSINESS_ID,
+            'type'           => 'customer',
+            'name'           => $name,
+            'mobile'         => $mobile,
+            'app_password'   => Hash::make($password),
+            'contact_status' => 'active',
+            'created_by'     => 1, // owner del business (para consistencia con creaciones desde admin)
+        ]);
+
+        // Refresh para obtener membership_no que asignó el hook post-created.
+        $contact->refresh();
+
+        // Emitir token bearer automáticamente para que el user quede logueado tras el registro.
+        $token = Str::random(60);
+        $contact->app_api_token = hash('sha256', $token);
+        $contact->saveQuietly();
+
+        return response()->json([
+            'success'  => true,
+            'message'  => 'Registro exitoso. Bienvenido a Celfix Socios.',
+            'token'    => $token,
+            'customer' => $this->customerPayload($contact),
+        ], 201);
+    }
+
+    /**
      * POST /api/v1/auth/logout  (protected)
      * Invalida el token actual borrándolo de la BD.
      */

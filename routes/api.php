@@ -32,6 +32,11 @@ Route::prefix('v1')->group(function () {
     Route::post('/auth/login', [\App\Http\Controllers\Api\V1\AuthController::class, 'login'])
         ->middleware('throttle:5,1');
 
+    // Registro público con rate limit conservador (3/min por IP) para evitar
+    // registros masivos automatizados.
+    Route::post('/auth/register', [\App\Http\Controllers\Api\V1\AuthController::class, 'register'])
+        ->middleware('throttle:3,1');
+
     Route::middleware('auth.customer.api')->group(function () {
         Route::post('/auth/logout',          [\App\Http\Controllers\Api\V1\AuthController::class,        'logout']);
         Route::post('/auth/change-password', [\App\Http\Controllers\Api\V1\AuthController::class,        'changePassword']);
