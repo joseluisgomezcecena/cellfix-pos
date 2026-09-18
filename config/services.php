@@ -31,4 +31,17 @@ return [
         'region' => env('AWS_DEFAULT_REGION', 'us-east-1'),
     ],
 
+    // WhatsApp provider — usado por App\Services\WhatsApp\WhatsAppService.
+    // Por default 'stub' (solo loguea). Cambiar a 'meta' cuando las credenciales
+    // de Meta WhatsApp Business Cloud API estén configuradas.
+    'whatsapp' => [
+        'provider' => env('WHATSAPP_PROVIDER', 'stub'),
+        'meta' => [
+            'phone_id' => env('META_WA_PHONE_ID'),
+            'access_token' => env('META_WA_ACCESS_TOKEN'),
+            'template_name' => env('META_WA_TEMPLATE_NAME', 'celfix_password_reset'),
+            'template_lang' => env('META_WA_TEMPLATE_LANG', 'es_MX'),
+        ],
+    ],
+
 ];

@@ -170,6 +170,95 @@ class AuthController extends Controller
     }
 
     /**
+     * POST /api/v1/auth/forgot-password
+     * Body: { mobile: "6861234567" }
+     *
+     * Genera una contraseña temporal aleatoria de 8 caracteres, actualiza el
+     * app_password del cliente con su hash bcrypt, y envía la contraseña en
+     * claro por WhatsApp al mismo número.
+     *
+     * Comportamiento:
+     *   - Si el mobile NO existe → responde igual (siempre "revisa tu WhatsApp")
+     *     para NO revelar qué números están registrados en el POS. Evita
+     *     enumeration attacks.
+     *   - Si el envío falla → devuelve 502 con mensaje genérico. La contraseña
+     *     temporal NO se actualiza en la BD si el envío falla (rollback).
+     *
+     * Rate-limitado en routes/api.php a 3 intentos/min por IP.
+     */
+    public function forgotPassword(Request $request): JsonResponse
+    {
+        $mobile_raw = (string) $request->input('mobile', '');
+        $mobile = self::normalizeMobile($mobile_raw);
+
+        if ($mobile === '' || strlen($mobile) < 10) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Ingresa un teléfono válido de 10 dígitos.',
+            ], 422);
+        }
+
+        // Respuesta genérica que damos en cualquier caso donde no queremos revelar
+        // información. La app siempre dice "revisa tu WhatsApp".
+        $generic_ok = response()->json([
+            'success' => true,
+            'message' => 'Si el número está registrado, recibirás tu contraseña temporal por WhatsApp en los próximos minutos.',
+        ]);
+
+        $contact = Contact::where('business_id', self::BUSINESS_ID)
+            ->whereIn('type', ['customer', 'both'])
+            ->where(function ($q) use ($mobile) {
+                $q->where('mobile', $mobile)
+                  ->orWhereRaw("REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(mobile,' ',''),'-',''),'(',''),')',''),'+','') LIKE ?", ['%' . $mobile])
+                  ->orWhere('alternate_number', $mobile);
+            })
+            ->first();
+
+        // No existe: fingimos éxito para no revelar qué mobiles están registrados.
+        if (!$contact) {
+            \Log::info('[app-auth] forgot-password: mobile no registrado (respuesta genérica) ' . $mobile);
+            return $generic_ok;
+        }
+
+        // Generar contraseña temporal aleatoria de 8 chars sin caracteres confusos
+        // (sin 0/O/I/l/1) para reducir errores al teclearla.
+        $temp_password = $this->generateTempPassword(8);
+
+        // Intentar enviar por WhatsApp ANTES de actualizar la BD, para no dejar
+        // al cliente con una contraseña que nunca recibió.
+        $wa = app(\App\Services\WhatsApp\WhatsAppService::class);
+        $sent = $wa->sendPasswordReset($mobile, $temp_password);
+
+        if (!$sent) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No pudimos enviar tu contraseña por WhatsApp en este momento. Intenta de nuevo en unos minutos.',
+            ], 502);
+        }
+
+        // Envío OK → actualizar la BD y rotar token (invalida sesiones activas).
+        $contact->app_password = Hash::make($temp_password);
+        $contact->app_api_token = null; // fuerza re-login con la nueva password
+        $contact->saveQuietly();
+
+        \Log::info('[app-auth] forgot-password: contraseña temporal enviada a contact_id=' . $contact->id);
+
+        return $generic_ok;
+    }
+
+    /** Genera password aleatorio sin caracteres confusos (0/O/I/l/1). */
+    private function generateTempPassword(int $length = 8): string
+    {
+        $chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
+        $out = '';
+        $max = strlen($chars) - 1;
+        for ($i = 0; $i < $length; $i++) {
+            $out .= $chars[random_int(0, $max)];
+        }
+        return $out;
+    }
+
+    /**
      * POST /api/v1/auth/logout  (protected)
      * Invalida el token actual borrándolo de la BD.
      */

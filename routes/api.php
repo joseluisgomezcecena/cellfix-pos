@@ -37,6 +37,12 @@ Route::prefix('v1')->group(function () {
     Route::post('/auth/register', [\App\Http\Controllers\Api\V1\AuthController::class, 'register'])
         ->middleware('throttle:3,1');
 
+    // Recuperación de contraseña por WhatsApp. Rate-limit conservador para
+    // evitar spam a la Cloud API (que tiene costo/cuota) y para no bombardear
+    // al usuario si alguien intenta abusar.
+    Route::post('/auth/forgot-password', [\App\Http\Controllers\Api\V1\AuthController::class, 'forgotPassword'])
+        ->middleware('throttle:3,1');
+
     Route::middleware('auth.customer.api')->group(function () {
         Route::post('/auth/logout',          [\App\Http\Controllers\Api\V1\AuthController::class,        'logout']);
         Route::post('/auth/change-password', [\App\Http\Controllers\Api\V1\AuthController::class,        'changePassword']);
