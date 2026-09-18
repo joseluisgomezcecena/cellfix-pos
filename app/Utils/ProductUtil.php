@@ -2022,7 +2022,18 @@ class ProductUtil extends Util
 
     public function getVariationStockHistory($business_id, $variation_id, $location_id)
     {
-        $stock_history = Transaction::leftjoin('transaction_sell_lines as sl',
+        // Celfix: si el variation representa un IMEI único (equipo con serial),
+        // queremos ver el HISTORIAL COMPLETO entre sucursales para trazar el viaje
+        // del equipo. En equipos con IMEI el user espera ver: llegó al Almacén,
+        // se transfirió a Sucursal X, luego a Sucursal Y, y ahora está en Z.
+        //
+        // Heurística: si el sub_sku parece IMEI (14+ dígitos numéricos), aplicamos
+        // la vista cross-sucursal. Para el resto (accesorios, etc) mantenemos el
+        // filtro por location (evita ruido y mantiene compatibilidad).
+        $variation_sub_sku = Variation::where('id', $variation_id)->value('sub_sku');
+        $is_imei = $variation_sub_sku && preg_match('/^[0-9]{14,20}$/', $variation_sub_sku);
+
+        $stock_history_query = Transaction::leftjoin('transaction_sell_lines as sl',
             'sl.transaction_id', '=', 'transactions.id')
                                 ->leftjoin('purchase_lines as pl',
                                     'pl.transaction_id', '=', 'transactions.id')
@@ -2034,7 +2045,15 @@ class ProductUtil extends Util
                                 ->leftjoin('transaction_sell_lines as rsl',
                                         'rsl.transaction_id', '=', 'return.id')
                                 ->leftjoin('contacts as c', 'transactions.contact_id', '=', 'c.id')
-                                ->where('transactions.location_id', $location_id)
+                                ->leftjoin('business_locations as bl', 'transactions.location_id', '=', 'bl.id')
+                                ->where('transactions.business_id', $business_id);
+
+        // Filtro por location SOLO si NO es equipo con IMEI (para accesorios/servicios).
+        if (!$is_imei) {
+            $stock_history_query->where('transactions.location_id', $location_id);
+        }
+
+        $stock_history = $stock_history_query
                                 ->where(function ($q) use ($variation_id) {
                                     $q->where('sl.variation_id', $variation_id)
                                         ->orWhere('pl.variation_id', $variation_id)
@@ -2046,6 +2065,8 @@ class ProductUtil extends Util
                                 ->select(
                                     'transactions.id as transaction_id',
                                     'transactions.type as transaction_type',
+                                    'transactions.location_id',
+                                    'bl.name as location_name',
                                     'sl.quantity as sell_line_quantity',
                                     'pl.quantity as purchase_line_quantity',
                                     'rsl.quantity_returned as sell_return',
@@ -2075,6 +2096,10 @@ class ProductUtil extends Util
                 'transaction_id' => $stock_line->transaction_id,
                 'contact_name' => $stock_line->contact_name,
                 'supplier_business_name' => $stock_line->supplier_business_name,
+                // Celfix: en equipos con IMEI queremos ver dónde ocurrió cada
+                // movimiento para trazar el viaje del equipo entre sucursales.
+                'location_id' => $stock_line->location_id ?? null,
+                'location_name' => $stock_line->location_name ?? null,
             ];
             if ($stock_line->transaction_type == 'sell') {
                 if ($stock_line->status != 'final') {
@@ -2211,6 +2236,91 @@ class ProductUtil extends Util
                     'stock_in_second_unit' => $this->roundQuantity($stock_in_second_unit),
                 ]);
             }
+        }
+
+        // === Celfix: agregar warranty_claims + store_repairs al historial ===
+        // Warranty claims: el equipo salió por reemplazo (-1). Store repairs: evento
+        // sin efecto en stock (0). Se agregan al array y se re-ordena por fecha
+        // para recalcular el stock progresivo consistente.
+        if (\Schema::hasTable('warranty_claims')) {
+            $wq = DB::table('warranty_claims as wc')
+                ->leftJoin('contacts as c', 'c.id', '=', 'wc.contact_id')
+                ->leftJoin('business_locations as bl', 'bl.id', '=', 'wc.location_id')
+                ->where('wc.business_id', $business_id)
+                ->where('wc.replacement_variation_id', $variation_id)
+                ->where('wc.status', 'completed');
+            // Para equipos con IMEI queremos ver garantías en TODAS las sucursales;
+            // para el resto, solo en la sucursal actual.
+            if (!$is_imei) {
+                $wq->where('wc.location_id', $location_id);
+            }
+            $warranties = $wq
+                ->select('wc.claim_date', 'wc.ref_no', 'wc.location_id',
+                         'bl.name as location_name', 'c.name as customer_name')
+                ->get();
+            foreach ($warranties as $w) {
+                $stock_history_array[] = [
+                    'date' => $w->claim_date,
+                    'transaction_id' => null,
+                    'contact_name' => $w->customer_name,
+                    'supplier_business_name' => null,
+                    'location_id' => (int) $w->location_id,
+                    'location_name' => $w->location_name,
+                    'quantity_change' => -1,
+                    'stock' => 0, // Se recalcula abajo
+                    'type' => 'warranty',
+                    'type_label' => 'Garantía (reemplazo)',
+                    'ref_no' => $w->ref_no,
+                    'stock_in_second_unit' => 0,
+                ];
+            }
+        }
+
+        // Store repairs: solo evento, quantity_change = 0. Se busca por IMEI (sub_sku).
+        if (\Schema::hasTable('store_repairs')) {
+            if ($variation_sub_sku) {
+                $sq = DB::table('store_repairs as sr')
+                    ->leftJoin('technicians as t', 't.id', '=', 'sr.technician_id')
+                    ->leftJoin('business_locations as bl', 'bl.id', '=', 'sr.location_id')
+                    ->where('sr.business_id', $business_id)
+                    ->where('sr.imei', $variation_sub_sku);
+                if (!$is_imei) {
+                    $sq->where('sr.location_id', $location_id);
+                }
+                $repairs = $sq
+                    ->select('sr.created_at', 'sr.status', 'sr.customer_name',
+                             'sr.location_id', 'bl.name as location_name',
+                             't.name as technician')
+                    ->get();
+                foreach ($repairs as $r) {
+                    $stock_history_array[] = [
+                        'date' => $r->created_at,
+                        'transaction_id' => null,
+                        'contact_name' => $r->customer_name,
+                        'supplier_business_name' => null,
+                        'location_id' => (int) $r->location_id,
+                        'location_name' => $r->location_name,
+                        'quantity_change' => 0,
+                        'stock' => 0, // Se recalcula abajo
+                        'type' => 'store_repair',
+                        'type_label' => 'Reparación de tienda',
+                        'ref_no' => 'Técnico: ' . ($r->technician ?? '—') . ' · ' . $r->status,
+                        'stock_in_second_unit' => 0,
+                    ];
+                }
+            }
+        }
+
+        // Re-ordenar todo por fecha ascendente y recalcular el stock progresivo
+        // (el array original ya venía ordenado, pero warranty/store_repair pueden
+        // haberse insertado entre eventos).
+        usort($stock_history_array, function ($a, $b) {
+            return strcmp($a['date'], $b['date']);
+        });
+        $running_stock = 0;
+        foreach ($stock_history_array as $idx => $row) {
+            $running_stock += (float) $row['quantity_change'];
+            $stock_history_array[$idx]['stock'] = $this->roundQuantity($running_stock);
         }
 
         return array_reverse($stock_history_array);

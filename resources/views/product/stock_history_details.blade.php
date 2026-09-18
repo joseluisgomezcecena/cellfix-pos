@@ -84,6 +84,7 @@
 			<thead>
 			<tr>
 				<th>@lang('lang_v1.type')</th>
+				<th>Sucursal</th>
 				<th>@lang('lang_v1.quantity_change')</th>
 				@if(!empty($common_settings['enable_secondary_unit']))
 					<th>@lang('lang_v1.quantity_change') (@lang('lang_v1.secondary_unit'))</th>
@@ -101,6 +102,13 @@
 			@forelse($stock_history as $history)
 				<tr>
 					<td>{{$history['type_label']}}</td>
+					<td>
+						@if(!empty($history['location_name']))
+							<span class="label label-primary">{{ $history['location_name'] }}</span>
+						@else
+							<small class="text-muted">—</small>
+						@endif
+					</td>
 					@if($history['quantity_change'] > 0 )
 						<td class="text-success"> +<span class="display_currency" data-is_quantity="true">{{$history['quantity_change']}}</span>
 						</td>
@@ -154,7 +162,7 @@
 					</td>
 				</tr>
 			@empty
-				<tr><td colspan="5" class="text-center">
+				<tr><td colspan="7" class="text-center">
 					@lang('lang_v1.no_stock_history_found')
 				</td></tr>
 			@endforelse

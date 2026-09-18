@@ -16,6 +16,7 @@
                 <th>{{ __('inventorymultilocation::lang.total_value') }}</th>
                 <th>{{ __('inventorymultilocation::lang.stock_status') }}</th>
                 <th>{{ __('inventorymultilocation::lang.last_updated') }}</th>
+                <th>{{ __('inventorymultilocation::lang.last_movement') }}</th>
                 <th>{{ __('messages.action') }}</th>
             </tr>
         </thead>
@@ -87,6 +88,28 @@
                             <small class="text-muted">{{ __('inventorymultilocation::lang.never') }}</small>
                         @endif
                     </td>
+                    {{-- Nueva columna "Último movimiento" — muestra el evento REAL más reciente
+                         que afectó el stock (compra/venta/transfer/garantía/ajuste/store_repair)
+                         con tipo + fecha + referencia. Fuente de verdad son las tablas
+                         transaccionales, no vld.updated_at (que no es fiable). --}}
+                    <td>
+                        @if(!empty($item->last_movement))
+                            @php $lm = $item->last_movement; @endphp
+                            <div style="font-size:12px; line-height:1.35;">
+                                <span style="display:inline-block; padding:2px 6px; background:{{ $lm['color'] }}; color:#fff; border-radius:3px; font-weight:bold; font-size:11px;">
+                                    <i class="fa {{ $lm['icon'] }}"></i> {{ $lm['type_label'] }}
+                                </span>
+                                <div style="color:#333; margin-top:3px;">
+                                    {{ \Carbon\Carbon::parse($lm['date'])->format('d/m/Y H:i') }}
+                                </div>
+                                @if(!empty($lm['ref']))
+                                    <div style="color:#666; font-size:11px;">{{ $lm['ref'] }}</div>
+                                @endif
+                            </div>
+                        @else
+                            <small class="text-muted">{{ __('inventorymultilocation::lang.no_movements') }}</small>
+                        @endif
+                    </td>
                     <td>
                         <div class="btn-group">
                             <button type="button" class="btn btn-xs btn-primary dropdown-toggle" data-toggle="dropdown">
@@ -117,7 +140,7 @@
                 </tr>
             @empty
                 <tr>
-                    <td colspan="{{ request()->get('location_id') == 'all' ? '11' : '10' }}" class="text-center">
+                    <td colspan="{{ request()->get('location_id') == 'all' ? '12' : '11' }}" class="text-center">
                         <div class="alert alert-info" style="margin: 20px 0;">
                             <i class="fa fa-info-circle"></i> {{ __('messages.no_data') }}
                         </div>

@@ -24,6 +24,8 @@ return [
     'unit_cost' => 'Costo Unitario',
     'total_value' => 'Valor Total',
     'last_updated' => 'Última Actualización',
+    'last_movement' => 'Último Movimiento',
+    'no_movements' => 'Sin movimientos',
     'stock_status' => 'Estado del Stock',
     'in_stock' => 'En Stock',
     'low_stock' => 'Stock Bajo',
