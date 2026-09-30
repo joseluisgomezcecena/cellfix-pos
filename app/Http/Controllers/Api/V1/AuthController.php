@@ -344,10 +344,17 @@ class AuthController extends Controller
         return [
             'id'                     => $c->id,
             'name'                   => trim(($c->name ?? '') ?: (($c->first_name ?? '') . ' ' . ($c->last_name ?? ''))),
+            'first_name'             => $c->first_name,
+            'last_name'              => $c->last_name,
             'mobile'                 => $c->mobile,
             'email'                  => $c->email,
+            // ISO YYYY-MM-DD (o null si el user aún no la capturó).
+            // La app debe forzar al user a llenarla si viene null.
+            'date_of_birth'          => $c->dob ? \Carbon\Carbon::parse($c->dob)->toDateString() : null,
             'membership_no'          => $c->membership_no,
             'membership_expires_at'  => $c->membership_expires_at,
+            'photo_url'              => \App\Http\Controllers\Api\V1\PhotoController::urlFor($c->photo_path ?? null),
+            'profile_complete'       => !empty($c->first_name) && !empty($c->last_name) && !empty($c->dob),
         ];
     }
 }

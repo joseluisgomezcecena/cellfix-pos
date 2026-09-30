@@ -47,6 +47,16 @@ Route::prefix('v1')->group(function () {
         Route::post('/auth/logout',          [\App\Http\Controllers\Api\V1\AuthController::class,        'logout']);
         Route::post('/auth/change-password', [\App\Http\Controllers\Api\V1\AuthController::class,        'changePassword']);
         Route::get('/me',                    [\App\Http\Controllers\Api\V1\MeController::class,          'show']);
+        // Actualización del perfil (nombre, apellidos, fecha nacimiento, email).
+        // Rate-limit para evitar spam accidental por autosave/debounce mal en la app.
+        Route::put('/me', [\App\Http\Controllers\Api\V1\MeController::class, 'update'])
+            ->middleware('throttle:20,60');
+
+        // Foto de perfil. Rate limit conservador (10/hora por cliente autenticado)
+        // para evitar abuso; el processing con GD consume CPU.
+        Route::post('/me/photo',   [\App\Http\Controllers\Api\V1\PhotoController::class, 'upload'])
+            ->middleware('throttle:10,60');
+        Route::delete('/me/photo', [\App\Http\Controllers\Api\V1\PhotoController::class, 'destroy']);
         Route::get('/purchases',             [\App\Http\Controllers\Api\V1\PurchasesController::class,   'index']);
         Route::get('/purchases/{id}',        [\App\Http\Controllers\Api\V1\PurchasesController::class,   'show']);
         Route::get('/repair-orders',         [\App\Http\Controllers\Api\V1\RepairOrdersController::class,'index']);

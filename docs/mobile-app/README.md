@@ -348,19 +348,170 @@ Respuesta:
   "success": true,
   "customer": {
     "id": 42,
-    "name": "Juan Pérez",
+    "name": "Juan Pérez López",
+    "first_name": "Juan",
+    "last_name": "Pérez López",
     "mobile": "6861234567",
     "email": "juan@example.com",
+    "date_of_birth": "1990-05-15",
     "membership_no": "9001000042",
-    "membership_expires_at": "2027-08-19"
+    "membership_expires_at": "2027-08-19",
+    "photo_url": "https://pos.celfix.mx/storage/customer_photos/42_abc123.jpg",
+    "profile_complete": true
   }
 }
 ```
+
+Este payload es el mismo que devuelven `/auth/login`, `/auth/register`, `/auth/change-password` y `/me/photo` (todos incluyen el objeto `customer` completo).
 
 Notas:
 - `membership_no` es el ID de membresía (10 dígitos: `9001` + id con padding).
 - **Usa este número para el QR de identificación** en el mostrador.
 - `membership_expires_at` puede ser `null` (membresía vitalicia o no asignada).
+- `first_name`, `last_name`, `date_of_birth` pueden ser `null` si el cliente aún no completó su perfil (típicamente clientes existentes en la BD del POS que nunca actualizaron datos desde la app).
+- `photo_url` puede ser `null` si aún no subió foto de perfil. Cuando existe, es URL absoluta lista para usar en `Image.network()` de Flutter.
+- `profile_complete` es `true` cuando `first_name`, `last_name` y `date_of_birth` tienen valor. **La app debe bloquear el resto de features y forzar al user a completar su perfil cuando esto sea `false`.**
+
+#### `PUT /api/v1/me`
+
+Actualiza los datos personales del cliente.
+
+Rate limit: **20 requests/hora por token** (para evitar spam accidental por autosave/debounce en la app).
+
+Body:
+```json
+{
+  "first_name": "Juan",
+  "last_name": "Pérez López",
+  "date_of_birth": "1990-05-15",
+  "email": "juan@example.com"
+}
+```
+
+Reglas:
+- `first_name`: **requerido**, 1-191 caracteres
+- `last_name`: **requerido**, 1-191 caracteres
+- `date_of_birth`: **requerido**, formato `YYYY-MM-DD`, entre 1900 y hoy − 13 años
+- `email`: opcional. Si viene debe ser un email válido. Enviar `""` (string vacío) para dejarlo en null.
+
+**Nota importante:** el backend sincroniza automáticamente el campo interno `name` de UltimatePOS como `first_name + " " + last_name` para consistencia en tickets, reportes y el POS.
+
+Respuesta OK:
+```json
+{
+  "success": true,
+  "message": "Datos actualizados.",
+  "customer": { ...payload completo... }
+}
+```
+
+Respuestas de error (todas `422`):
+
+| Escenario | `message` |
+|---|---|
+| Falta `first_name` | `"El nombre es obligatorio."` |
+| `first_name` > 191 chars | `"El nombre es demasiado largo."` |
+| Falta `last_name` | `"Los apellidos son obligatorios."` |
+| `last_name` > 191 chars | `"Los apellidos son demasiado largos."` |
+| Falta `date_of_birth` | `"La fecha de nacimiento es obligatoria."` |
+| DOB en formato incorrecto | `"Fecha de nacimiento inválida. Usa formato YYYY-MM-DD."` |
+| DOB con menos de 13 años (edad mínima) | `"Debes tener al menos 13 años para usar la app."` |
+| DOB inválida (año < 1900 o parse falla) | `"Fecha de nacimiento inválida."` |
+| Email malformado | `"El correo electrónico no es válido."` |
+
+Rate limit excedido → `429`.
+
+**Flow sugerido en la app:**
+
+1. Al hacer login o entrar a la app, revisar `customer.profile_complete`
+2. Si es `false`, mostrar pantalla "Completa tu perfil" con los 4 campos (email opcional)
+3. Al guardar → `PUT /me` con los datos
+4. Si la respuesta trae `customer.profile_complete: true`, desbloquear el resto de la app
+
+#### `POST /api/v1/me/photo`
+
+Sube foto de perfil del cliente.
+
+Rate limit: **10 uploads/hora por token**.
+
+Body: `multipart/form-data` con el campo `photo` (imagen).
+
+Restricciones:
+- Máximo **5 MB**
+- Formatos: `JPG`, `JPEG`, `PNG`, `WEBP`
+- El backend hace resize a máx 800×800 (proporcional) + corrección EXIF + conversión siempre a JPEG calidad 85
+- Al subir una nueva foto se **borra automáticamente** la anterior
+
+Respuesta OK:
+```json
+{
+  "success": true,
+  "message": "Foto de perfil actualizada.",
+  "photo_url": "https://pos.celfix.mx/storage/customer_photos/42_abc123.jpg"
+}
+```
+
+Errores:
+
+| HTTP | `message` |
+|---|---|
+| 422 | `"Debes enviar una imagen en el campo \"photo\"."` |
+| 422 | `"La imagen no llegó completa. Intenta de nuevo."` |
+| 422 | `"La imagen es muy grande (máximo 5 MB)."` |
+| 422 | `"Formato no soportado. Usa JPG, PNG o WEBP."` |
+| 500 | `"No pudimos procesar la imagen. Intenta con otra."` |
+| 500 | `"No pudimos guardar la imagen. Intenta más tarde."` |
+| 429 | Rate limit excedido |
+
+**Ejemplo con Dio (Flutter):**
+
+```dart
+Future<String> uploadPhoto(File imageFile) async {
+  final formData = FormData.fromMap({
+    'photo': await MultipartFile.fromFile(
+      imageFile.path,
+      filename: 'profile.jpg',
+      contentType: MediaType('image', 'jpeg'),
+    ),
+  });
+  final r = await _api.dio.post('/me/photo', data: formData);
+  if (r.data['success'] == true) {
+    return r.data['photo_url'];
+  }
+  throw Exception(r.data['message'] ?? 'Error subiendo foto');
+}
+```
+
+Para elegir la imagen desde cámara o galería, usa el package `image_picker`:
+
+```dart
+final picker = ImagePicker();
+final XFile? picked = await picker.pickImage(
+  source: ImageSource.gallery,   // o ImageSource.camera
+  imageQuality: 90,               // opcional, para reducir MB antes de subir
+);
+if (picked != null) {
+  final url = await uploadPhoto(File(picked.path));
+  // actualiza el estado / customer.photo_url
+}
+```
+
+#### `DELETE /api/v1/me/photo`
+
+Borra la foto de perfil actual (archivo + campo en BD).
+
+Sin body. Sin rate limit específico.
+
+Respuesta OK:
+```json
+{
+  "success": true,
+  "message": "Foto de perfil eliminada.",
+  "photo_url": null
+}
+```
+
+Si el cliente no tenía foto, también devuelve `200` con `photo_url: null`.
 
 #### `GET /api/v1/purchases?page=N`
 
@@ -502,14 +653,16 @@ Columnas relevantes para la app:
 | `business_id` | int | Siempre `2` para Celfix |
 | `type` | enum | `customer`, `supplier`, `both` — la API solo acepta `customer`/`both` |
 | `name` | varchar | Nombre completo |
-| `first_name`, `last_name` | varchar | Alternos (fallback si `name` está vacío) |
+| `first_name`, `last_name` | varchar | Nombres del cliente. Editables desde la app vía `PUT /me`. El backend mantiene `name` sincronizado como `first_name + " " + last_name`. |
+| `dob` | date | Fecha de nacimiento. Editable desde la app. Obligatorio para que `profile_complete` sea `true`. |
 | `mobile` | varchar | Teléfono principal (match de login) |
 | `alternate_number` | varchar | Teléfono alterno (también matched en login) |
-| `email` | varchar | Puede ser null |
+| `email` | varchar | Opcional. Editable desde la app. |
 | `membership_no` | varchar | Auto-generado: `"9001" + id con padding a 6` |
 | `membership_expires_at` | date | Nullable |
 | `app_password` | varchar (bcrypt) | Hash de la contraseña de la app |
 | `app_api_token` | varchar(64) | SHA-256 del bearer token vivo (o `null`) |
+| `photo_path` | varchar(255) | Path relativo al disk `public` de la foto de perfil (ej. `customer_photos/42_abc123.jpg`). El backend devuelve la URL absoluta ya construida en `customer.photo_url`. |
 | `deleted_at` | timestamp | Soft delete (Eloquent lo excluye por default) |
 
 ### Tabla `transactions` (ventas y reparaciones)
@@ -597,12 +750,17 @@ Estos endpoints **NO** existen y hay que agregarlos si la app los necesita:
 
 | Endpoint | Uso pendiente |
 |---|---|
-| `POST /auth/request-otp` + `verify-otp` | Recuperar contraseña vía SMS (Twilio) |
-| `GET /membership/qr` | QR/barcode del membership_no (opcional — se puede generar client-side) |
+| `GET /membership/qr` | QR/barcode del membership_no (opcional — se puede generar client-side con `qr_flutter` a partir de `customer.membership_no`) |
 | `POST /device-token` | Guardar FCM token para push |
 | `GET /notifications` | Historial de notificaciones al cliente |
 | `POST /appointments` | Agendar cita de reparación |
 | `GET /points` | Consulta de puntos de fidelidad (`rp_earned` del contact) |
+
+**Ya implementados** (para referencia — hay documentación completa arriba):
+- `POST /auth/register` (registro con simulación SMS)
+- `POST /auth/forgot-password` (recuperación por WhatsApp, con provider stub/meta)
+- `PUT /me` (actualizar first_name, last_name, date_of_birth, email)
+- `POST /me/photo` + `DELETE /me/photo` (foto de perfil con cámara/galería)
 
 Si necesitas alguno de estos, avísale a la persona que mantiene el backend — hay que:
 1. Crear controller en `app/Http/Controllers/Api/V1/`
@@ -626,7 +784,8 @@ Si necesitas alguno de estos, avísale a la persona que mantiene el backend — 
 | `url_launcher` | Abrir Google Maps con `maps_url` |
 | `qr_flutter` | Generar QR del membership_no |
 | `pull_to_refresh` | Refrescar pantallas |
-| `cached_network_image` | Imágenes de promos |
+| `cached_network_image` | Imágenes de promos + foto de perfil (con placeholder mientras carga) |
+| `image_picker` | Elegir foto desde cámara o galería (upload a `POS /me/photo`) |
 | `firebase_messaging` | Push notifications (fase 2) |
 | `flutter_svg` | Íconos y assets vectoriales |
 
