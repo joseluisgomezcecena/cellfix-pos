@@ -490,6 +490,10 @@ Route::middleware(['setData', 'auth', 'SetSessionData', 'language', 'timezone', 
         Route::post('/memberships/{id}/activate', [\App\Http\Controllers\AppConfig\MembershipController::class, 'activate'])->name('app-config.memberships.activate');
         Route::post('/memberships/{id}/renew', [\App\Http\Controllers\AppConfig\MembershipController::class, 'renew'])->name('app-config.memberships.renew');
         Route::post('/memberships/{id}/cancel', [\App\Http\Controllers\AppConfig\MembershipController::class, 'cancel'])->name('app-config.memberships.cancel');
+        // Cursos — programa cursos con fecha/hora/capacidad; los socios se inscriben desde la app.
+        Route::resource('courses', \App\Http\Controllers\AppConfig\CourseController::class, ['as' => 'app-config']);
+        Route::get('/courses/{id}/enrollments', [\App\Http\Controllers\AppConfig\CourseController::class, 'enrollments'])->name('app-config.courses.enrollments');
+        Route::delete('/courses/{id}/enrollments/{enrollmentId}', [\App\Http\Controllers\AppConfig\CourseController::class, 'removeEnrollment'])->name('app-config.courses.enrollments.remove');
     });
     Route::post('/daily-cuts/vendor-counts', [\App\Http\Controllers\DailyCutController::class, 'saveVendorCounts'])->name('daily-cuts.vendor-counts');
     Route::get('/daily-cuts/export', [\App\Http\Controllers\DailyCutController::class, 'export'])->name('daily-cuts.export');

@@ -268,6 +268,49 @@ DecoratedBox(
 - El admin del POS ve el tamaño recomendado y aspect ratio en el form de subida (`/app-config/designs`).
 - Las imágenes se sirven desde el mismo servidor que el resto de assets (`/storage/app_designs/...`).
 
+#### `GET /api/v1/courses?location_id={id}&include_past=0`
+
+Lista de cursos activos (talleres, capacitaciones, eventos) que Celfix programa desde el POS (**App Config → Cursos**).
+
+Query params:
+- `location_id` (opcional): globales + los de esa sucursal. Sin param → todos los activos.
+- `include_past` (opcional, `0`|`1`, default `0`): con `1` incluye cursos que ya terminaron. Útil para pantalla de "historial".
+
+Respuesta:
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": 4,
+      "title": "Curso de reparación básica de celulares",
+      "description": "Aprende a diagnosticar problemas comunes de pantalla y batería.",
+      "instructor_name": "Ing. Juan Pérez",
+      "image_url": "https://pos.celfix.mx/storage/app_courses/repbasica.jpg",
+      "target_location_id": null,
+      "starts_at": "2026-10-15T10:00:00-07:00",
+      "ends_at":   "2026-10-15T13:00:00-07:00",
+      "capacity": 20,
+      "enrolled_count": 8,
+      "spots_left": 12,
+      "is_full": false,
+      "has_started": false
+    }
+  ]
+}
+```
+
+Notas:
+- `starts_at` y `ends_at` son ISO 8601 con timezone Mexicali. `has_started = true` cuando el curso ya inició (la inscripción se bloquea; ver `POST /courses/{id}/enroll`).
+- `capacity`: **0 significa ilimitado**. Si es `>0` y `enrolled_count >= capacity`, `is_full = true` y `spots_left = 0`.
+- `spots_left` es `null` cuando `capacity = 0` (ilimitado); número entero cuando hay tope.
+- **`is_enrolled` NO viene en este payload** — se cruza contra `/me/courses` (ver 4.3). Regla sugerida en la UI:
+  - Si no autenticado → botón "Iniciar sesión para inscribirte".
+  - Si autenticado y NO está en `/me/courses` y no `is_full` y no `has_started` → botón "Inscribirme".
+  - Si autenticado y está en `/me/courses` → botón "Cancelar inscripción".
+  - Si `is_full` y no inscrito → botón deshabilitado "Cupo lleno".
+  - Si `has_started` y no inscrito → deshabilitado "Ya inició".
+
 ---
 
 ### 4.2 Auth
@@ -734,6 +777,82 @@ Notas:
 - `balance` es lo que el cliente aún debe al recoger el equipo.
 - `products` es la concatenación de nombres de líneas del ticket (equipo + refacciones + servicios).
 
+#### `GET /api/v1/me/courses?include_past=0`
+
+Cursos en los que **el cliente autenticado** está inscrito.
+
+Query params:
+- `include_past` (opcional, `0`|`1`, default `0`): con `1` incluye cursos que ya terminaron (historial).
+
+Respuesta:
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": 4,
+      "title": "Curso de reparación básica de celulares",
+      "description": "Aprende a diagnosticar problemas comunes...",
+      "instructor_name": "Ing. Juan Pérez",
+      "image_url": "https://pos.celfix.mx/storage/app_courses/repbasica.jpg",
+      "target_location_id": null,
+      "starts_at": "2026-10-15T10:00:00-07:00",
+      "ends_at":   "2026-10-15T13:00:00-07:00",
+      "has_started": false,
+      "has_ended": false
+    }
+  ]
+}
+```
+
+Notas:
+- Devuelve los mismos campos que `/courses` menos `capacity`/`enrolled_count`/`spots_left` (irrelevantes para el owner).
+- La app puede pintar una sección **"Mis cursos"** con estos + acción "Cancelar" mientras `has_started == false`.
+- Para saber si un curso del listado público está inscrito por el usuario: cruzar `/courses[].id` contra `/me/courses[].id`.
+
+#### `POST /api/v1/courses/{id}/enroll`
+
+Inscribe al cliente autenticado en el curso.
+
+Headers: `Authorization: Bearer <token>`. Sin body.
+
+Rate-limit: **20 requests / minuto** por cliente.
+
+Respuestas:
+
+- **200 OK — inscripción confirmada:**
+  ```json
+  { "success": true, "message": "Inscripción confirmada. ¡Nos vemos en el curso!" }
+  ```
+
+- **200 OK — ya estaba inscrito (idempotente):**
+  ```json
+  { "success": true, "message": "Ya estás inscrito en este curso.", "already_enrolled": true }
+  ```
+
+- **404** — el curso no existe o está inactivo.
+- **409** — cupo lleno (`{"success":false,"message":"Este curso ya está lleno."}`).
+- **422** — el curso ya inició (`{"success":false,"message":"Este curso ya inició, no se aceptan más inscripciones."}`).
+
+**Flow sugerido en la app:**
+1. Botón "Inscribirme" visible cuando `is_full == false && has_started == false && !isEnrolledLocally`.
+2. Tap → POST /enroll.
+3. On success → invalidar cache de `/courses` y `/me/courses` para que el botón cambie a "Cancelar".
+4. On 409 → mostrar snackbar "Cupo lleno" y refrescar `/courses` para que el UI se actualice.
+
+#### `DELETE /api/v1/courses/{id}/enroll`
+
+Cancela la inscripción del cliente autenticado.
+
+Headers: `Authorization: Bearer <token>`. Sin body.
+
+Respuestas:
+- **200 OK** — `{"success":true,"message":"Inscripción cancelada."}`
+- **404** — no estaba inscrito, o el curso no existe.
+- **422** — el curso ya inició (no se permite cancelar retroactivamente).
+
+Después de cancelar, refrescar `/courses` y `/me/courses` para reflejar el cupo liberado.
+
 ---
 
 ## 5. Modelo de datos relevante
@@ -781,6 +900,7 @@ Una reparación es una transaction con `type='sell'` + `repair_status IS NOT NUL
 - `transaction_payments` → pagos (`method`, `amount`, `is_return`, `paid_on`)
 - `business_locations` → sucursales (`id`, `name`, columnas custom Celfix: `is_public_in_app`, `hours_json`, `latitude`, `longitude`, `phone_app`)
 - `app_promos`, `app_benefits` → contenido gestionado desde `/app-config` en el admin. Ambas tablas tienen columna `is_premium TINYINT(1) NOT NULL DEFAULT 0` que la API expone tal cual.
+- `app_courses`, `app_course_enrollments` → cursos programados desde `/app-config/courses`. `app_course_enrollments` tiene UNIQUE `(course_id, contact_id)` para evitar doble inscripción; ON DELETE CASCADE al borrar el curso.
 
 ---
 

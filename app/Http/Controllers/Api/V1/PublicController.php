@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\AppBenefit;
+use App\AppCourse;
 use App\AppDesign;
 use App\AppPromo;
 use App\BusinessLocation;
@@ -165,6 +166,62 @@ class PublicController extends Controller
      *     }
      *   }
      */
+    /**
+     * GET /api/v1/courses?location_id={id}&include_past=0
+     * Lista de cursos activos. Por default solo devuelve los que aún no terminan;
+     * pasar include_past=1 para incluir históricos.
+     *
+     * Cada item trae capacity, enrolled_count y spots_left para que la app pueda
+     * mostrar "Cupo lleno" sin hacer una request adicional. is_enrolled no viene
+     * aquí — la app lo cruza con /me/courses.
+     */
+    public function courses(Request $request): JsonResponse
+    {
+        $location_id = $request->query('location_id');
+        $location_id = is_numeric($location_id) ? (int) $location_id : null;
+        $include_past = (int) $request->query('include_past', 0) === 1;
+
+        $q = AppCourse::where('business_id', self::BUSINESS_ID)
+            ->where('is_active', 1)
+            ->withCount('enrollments');
+
+        if (!$include_past) {
+            $q->where('ends_at', '>=', now());
+        }
+
+        if ($location_id) {
+            $q->where(function ($x) use ($location_id) {
+                $x->whereNull('target_location_id')->orWhere('target_location_id', $location_id);
+            });
+        }
+
+        $courses = $q->orderBy('starts_at')->get();
+
+        $data = $courses->map(function ($c) {
+            $capacity = (int) $c->capacity;
+            $enrolled = (int) $c->enrollments_count;
+            $spotsLeft = $capacity === 0 ? null : max(0, $capacity - $enrolled);
+            return [
+                'id' => $c->id,
+                'title' => $c->title,
+                'description' => $c->description,
+                'instructor_name' => $c->instructor_name,
+                'image_url' => $c->image_path ? asset('storage/' . $c->image_path) : null,
+                'target_location_id' => $c->target_location_id,
+                'starts_at' => $c->starts_at ? $c->starts_at->toIso8601String() : null,
+                'ends_at' => $c->ends_at ? $c->ends_at->toIso8601String() : null,
+                // capacity=0 significa ilimitado.
+                'capacity' => $capacity,
+                'enrolled_count' => $enrolled,
+                'spots_left' => $spotsLeft,
+                'is_full' => $capacity > 0 && $enrolled >= $capacity,
+                'has_started' => $c->starts_at && $c->starts_at->isPast(),
+            ];
+        })->values();
+
+        return response()->json(['success' => true, 'data' => $data]);
+    }
+
     public function designs(Request $request): JsonResponse
     {
         $rows = AppDesign::where('business_id', self::BUSINESS_ID)

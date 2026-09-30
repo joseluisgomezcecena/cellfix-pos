@@ -27,6 +27,7 @@ Route::prefix('v1')->group(function () {
     Route::get('/promos',       [\App\Http\Controllers\Api\V1\PublicController::class, 'promos']);
     Route::get('/benefits',     [\App\Http\Controllers\Api\V1\PublicController::class, 'benefits']);
     Route::get('/app-designs',  [\App\Http\Controllers\Api\V1\PublicController::class, 'designs']);
+    Route::get('/courses',      [\App\Http\Controllers\Api\V1\PublicController::class, 'courses']);
 
     // Auth de clientes. Login público con rate limit para frenar brute force
     // (5 intentos/min por IP). Logout y perfil requieren token bearer.
@@ -61,5 +62,13 @@ Route::prefix('v1')->group(function () {
         Route::get('/purchases',             [\App\Http\Controllers\Api\V1\PurchasesController::class,   'index']);
         Route::get('/purchases/{id}',        [\App\Http\Controllers\Api\V1\PurchasesController::class,   'show']);
         Route::get('/repair-orders',         [\App\Http\Controllers\Api\V1\RepairOrdersController::class,'index']);
+
+        // Cursos: inscribirse / cancelar / ver mis inscritos.
+        // Rate-limit conservador en enroll/cancel para evitar toggle abusivo.
+        Route::get('/me/courses',            [\App\Http\Controllers\Api\V1\CoursesController::class,     'mine']);
+        Route::post('/courses/{id}/enroll',  [\App\Http\Controllers\Api\V1\CoursesController::class,     'enroll'])
+            ->middleware('throttle:20,60');
+        Route::delete('/courses/{id}/enroll',[\App\Http\Controllers\Api\V1\CoursesController::class,     'cancel'])
+            ->middleware('throttle:20,60');
     });
 });
