@@ -863,6 +863,16 @@ Widget premiumWrapper({
 
 Cuando el admin activa/renueva/cancela una membresía en el POS, el cliente sigue viendo su valor cacheado hasta que la app le pida a `/me` de nuevo. **Recomendación:** llamar `GET /me` al abrir la app y al hacer pull-to-refresh en Home. No es necesario polling agresivo — cambia raramente.
 
+### Tarjeta de membresía (importante)
+
+La tarjeta de membresía es **una sola** para todos los socios — registrados y premium. El background se sube desde el POS (`membership_card_background`) y sirve para ambos tipos; **no** rendericen un diseño distinto para premium.
+
+Diferencia visible entre los dos:
+- **Premium** (`customer.is_premium == true`) → misma tarjeta + **pill/badge dorado "Premium"** encima (ej. arriba a la derecha o sobre el borde). Sugerido: fondo `#f0ad4e`, texto blanco, icono estrella (mismo tratamiento que usa el admin del POS en el listado).
+- **Registrado no premium** → misma tarjeta, sin la pill.
+
+Por qué: el diseño de la tarjeta es marca única de Celfix Socios; el "premium" es un modificador visual, no un rediseño. Si un cliente paga la suscripción, la única diferencia visual es que aparece la pill dorada — el resto (QR, nombre, `membership_no`, fondo) es idéntico.
+
 ### Endpoints admin (solo referencia — no las consume la app)
 
 Estos viven en el POS bajo `App Config → Membresías Premium` y NO están en `/api/v1`:
