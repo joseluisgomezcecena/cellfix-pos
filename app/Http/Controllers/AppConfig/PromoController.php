@@ -99,6 +99,7 @@ class PromoController extends Controller
             'target_location_id' => 'nullable|integer|exists:business_locations,id',
             'category' => 'nullable|string|max:50',
             'is_active' => 'nullable|boolean',
+            'is_premium' => 'nullable|boolean',
             'sort_order' => 'nullable|integer',
             'image' => 'nullable|image|max:2048',
         ]);

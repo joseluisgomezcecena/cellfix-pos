@@ -484,6 +484,12 @@ Route::middleware(['setData', 'auth', 'SetSessionData', 'language', 'timezone', 
         Route::get('/designs', [\App\Http\Controllers\AppConfig\DesignController::class, 'index'])->name('app-config.designs.index');
         Route::post('/designs/{key}', [\App\Http\Controllers\AppConfig\DesignController::class, 'update'])->name('app-config.designs.update');
         Route::delete('/designs/{key}', [\App\Http\Controllers\AppConfig\DesignController::class, 'destroy'])->name('app-config.designs.destroy');
+        // Membresías Premium — activa/renueva/cancela suscripciones anuales de clientes.
+        Route::get('/memberships', [\App\Http\Controllers\AppConfig\MembershipController::class, 'index'])->name('app-config.memberships.index');
+        Route::get('/memberships/search', [\App\Http\Controllers\AppConfig\MembershipController::class, 'search'])->name('app-config.memberships.search');
+        Route::post('/memberships/{id}/activate', [\App\Http\Controllers\AppConfig\MembershipController::class, 'activate'])->name('app-config.memberships.activate');
+        Route::post('/memberships/{id}/renew', [\App\Http\Controllers\AppConfig\MembershipController::class, 'renew'])->name('app-config.memberships.renew');
+        Route::post('/memberships/{id}/cancel', [\App\Http\Controllers\AppConfig\MembershipController::class, 'cancel'])->name('app-config.memberships.cancel');
     });
     Route::post('/daily-cuts/vendor-counts', [\App\Http\Controllers\DailyCutController::class, 'saveVendorCounts'])->name('daily-cuts.vendor-counts');
     Route::get('/daily-cuts/export', [\App\Http\Controllers\DailyCutController::class, 'export'])->name('daily-cuts.export');

@@ -90,6 +90,7 @@ class BenefitController extends Controller
             'conditions' => 'nullable|string',
             'target_location_id' => 'nullable|integer|exists:business_locations,id',
             'is_active' => 'nullable|boolean',
+            'is_premium' => 'nullable|boolean',
             'sort_order' => 'nullable|integer',
         ]);
         // Consistencia: si es text, value=null; si es amount/percent, value_text=null

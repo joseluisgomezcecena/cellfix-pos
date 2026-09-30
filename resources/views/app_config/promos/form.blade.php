@@ -74,6 +74,18 @@
                 <strong>Activa</strong> (si está desactivada no aparece en la app aunque esté vigente)
             </label>
         </div>
+
+        <div class="checkbox" style="background:#fff8e1; border-left:4px solid #f0ad4e; padding:10px; border-radius:4px;">
+            <label>
+                {!! Form::hidden('is_premium', 0) !!}
+                {!! Form::checkbox('is_premium', 1, $promo->is_premium ?? 0) !!}
+                <strong><i class="fa fa-star" style="color:#f0ad4e;"></i> Solo para socios Premium</strong>
+                <br><small class="text-muted">
+                    Si está marcado, los usuarios registrados no premium verán la promo en gris con el mensaje "Paga tu suscripción para acceder".
+                    Los premium la verán normal.
+                </small>
+            </label>
+        </div>
     @endcomponent
 
     <div class="text-center" style="margin: 20px 0;">

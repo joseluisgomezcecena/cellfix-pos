@@ -39,6 +39,11 @@
                                 @endif
                             </td>
                             <td><strong>{{ $p->title }}</strong>
+                                @if($p->is_premium)
+                                    <span class="label" style="background:#f0ad4e; color:#fff; margin-left:6px;">
+                                        <i class="fa fa-star"></i> Premium
+                                    </span>
+                                @endif
                                 @if($p->description)<br><small class="text-muted">{{ \Str::limit($p->description, 80) }}</small>@endif
                             </td>
                             <td>{{ $p->category ?: '—' }}</td>

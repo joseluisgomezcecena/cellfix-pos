@@ -136,7 +136,19 @@ Respuesta:
       "starts_at": "2026-08-15",
       "ends_at": "2026-08-31",
       "target_location_id": null,
-      "image_url": "https://pos.celfix.mx/storage/promos/2x1-micas.jpg"
+      "image_url": "https://pos.celfix.mx/storage/promos/2x1-micas.jpg",
+      "is_premium": false
+    },
+    {
+      "id": 15,
+      "title": "3x2 en fundas premium",
+      "description": "Exclusivo para socios Premium",
+      "category": "accesorios",
+      "starts_at": null,
+      "ends_at": null,
+      "target_location_id": null,
+      "image_url": "https://pos.celfix.mx/storage/promos/3x2-fundas.jpg",
+      "is_premium": true
     }
   ]
 }
@@ -147,6 +159,7 @@ Notas:
 - `image_url` puede ser `null` si no se subió imagen.
 - Orden: `sort_order ASC, id DESC`.
 - **Aspect ratio recomendado en el admin del POS:** 1200 × 675 px (16:9). Diseña tus cards de promo en Flutter asumiendo ese ratio para consistencia visual. Máx 2 MB.
+- **`is_premium`**: si es `true` y el cliente autenticado no es premium (`customer.is_premium == false`), la card se renderiza en escala de grises con overlay "Paga tu suscripción para acceder". Si es premium, se ve normal. Ver **[Sección Premium / Gating](#premium-gating)** más abajo.
 
 #### `GET /api/v1/benefits?location_id={id}`
 
@@ -169,7 +182,21 @@ Respuesta:
       "display_value": "10%",
       "min_purchase": 0,
       "conditions": "No acumulable con otras promociones",
-      "target_location_id": null
+      "target_location_id": null,
+      "is_premium": false
+    },
+    {
+      "id": 7,
+      "title": "20% descuento en accesorios",
+      "description": "Exclusivo socios Premium",
+      "value_type": "percentage",
+      "value": 20.0,
+      "value_text": null,
+      "display_value": "20%",
+      "min_purchase": 0,
+      "conditions": null,
+      "target_location_id": null,
+      "is_premium": true
     }
   ]
 }
@@ -178,6 +205,7 @@ Respuesta:
 Notas:
 - `value_type` puede ser: `percentage`, `fixed`, `text`.
 - `display_value` viene pre-formateado por el backend (`"10%"`, `"$50 MXN"`, `"Producto GRATIS"`) — la app solo lo muestra.
+- **`is_premium`**: mismo tratamiento que en promos — grayed out + overlay "Paga tu suscripción para acceder" cuando el cliente no es premium. Ver **[Premium / Gating](#premium-gating)**.
 
 #### `GET /api/v1/app-designs`
 
@@ -274,12 +302,14 @@ Público, rate-limitado a **3 intentos/min por IP** para frenar registros masivo
       "mobile": "6861234567",
       "email": null,
       "membership_no": "9001000042",
-      "membership_expires_at": null
+      "membership_expires_at": null,
+      "is_premium": false
     }
   }
   ```
 
   El `membership_no` se auto-genera por el hook `booted()` del modelo Contact.
+  Todos los registros nuevos entran como **no premium** (`is_premium: false`, `membership_expires_at: null`); la activación premium se hace desde el POS en **App Config → Membresías Premium**.
 
 - **Cliente ya registrado** (mobile ya existe) → devuelve `409 Conflict`:
 
@@ -327,7 +357,8 @@ Respuesta OK:
     "mobile": "6861234567",
     "email": "juan@example.com",
     "membership_no": "9001000042",
-    "membership_expires_at": "2027-08-19"
+    "membership_expires_at": "2027-08-19",
+    "is_premium": true
   }
 }
 ```
@@ -418,6 +449,7 @@ Respuesta:
     "date_of_birth": "1990-05-15",
     "membership_no": "9001000042",
     "membership_expires_at": "2027-08-19",
+    "is_premium": true,
     "photo_url": "https://pos.celfix.mx/storage/customer_photos/42_abc123.jpg",
     "profile_complete": true
   }
@@ -429,7 +461,8 @@ Este payload es el mismo que devuelven `/auth/login`, `/auth/register`, `/auth/c
 Notas:
 - `membership_no` es el ID de membresía (10 dígitos: `9001` + id con padding).
 - **Usa este número para el QR de identificación** en el mostrador.
-- `membership_expires_at` puede ser `null` (membresía vitalicia o no asignada).
+- `membership_expires_at`: fecha ISO `YYYY-MM-DD` en que expira la suscripción premium; `null` = cliente registrado sin suscripción.
+- `is_premium` (**boolean**, calculado server-side): `true` si `membership_expires_at != null && membership_expires_at >= hoy`. **Fuente de verdad para gating de contenido premium en la app** (no calcules is_premium en el cliente — pueden desincronizarse las zonas horarias).
 - `first_name`, `last_name`, `date_of_birth` pueden ser `null` si el cliente aún no completó su perfil (típicamente clientes existentes en la BD del POS que nunca actualizaron datos desde la app).
 - `photo_url` puede ser `null` si aún no subió foto de perfil. Cuando existe, es URL absoluta lista para usar en `Image.network()` de Flutter.
 - `profile_complete` es `true` cuando `first_name`, `last_name` y `date_of_birth` tienen valor. **La app debe bloquear el resto de features y forzar al user a completar su perfil cuando esto sea `false`.**
@@ -721,7 +754,7 @@ Columnas relevantes para la app:
 | `alternate_number` | varchar | Teléfono alterno (también matched en login) |
 | `email` | varchar | Opcional. Editable desde la app. |
 | `membership_no` | varchar | Auto-generado: `"9001" + id con padding a 6` |
-| `membership_expires_at` | date | Nullable |
+| `membership_expires_at` | date | Nullable. Fecha de expiración de la suscripción premium. Un cliente es premium cuando esta fecha existe y `>= hoy`. Gestionado desde el POS: **App Config → Membresías Premium**. Ver **[Premium / Gating](#premium-gating)**. |
 | `app_password` | varchar (bcrypt) | Hash de la contraseña de la app |
 | `app_api_token` | varchar(64) | SHA-256 del bearer token vivo (o `null`) |
 | `photo_path` | varchar(255) | Path relativo al disk `public` de la foto de perfil (ej. `customer_photos/42_abc123.jpg`). El backend devuelve la URL absoluta ya construida en `customer.photo_url`. |
@@ -747,7 +780,100 @@ Una reparación es una transaction con `type='sell'` + `repair_status IS NOT NUL
 - `transaction_sell_lines` → items de cada venta (`product_id`, `variation_id`, `quantity`, `unit_price_inc_tax`)
 - `transaction_payments` → pagos (`method`, `amount`, `is_return`, `paid_on`)
 - `business_locations` → sucursales (`id`, `name`, columnas custom Celfix: `is_public_in_app`, `hours_json`, `latitude`, `longitude`, `phone_app`)
-- `app_promos`, `app_benefits` → contenido gestionado desde `/app-config` en el admin
+- `app_promos`, `app_benefits` → contenido gestionado desde `/app-config` en el admin. Ambas tablas tienen columna `is_premium TINYINT(1) NOT NULL DEFAULT 0` que la API expone tal cual.
+
+---
+
+<a id="premium-gating"></a>
+## 5.5 Premium / Gating de contenido
+
+### Modelo de suscripción
+
+Celfix distingue dos tipos de clientes:
+
+| Tipo | `is_premium` | Cómo se convierte |
+|---|---|---|
+| **Registrado** | `false` | Auto-registro desde la app (`POST /auth/register`). Todos empiezan aquí. |
+| **Premium** | `true` | Pagó suscripción anual en tienda. Un admin lo activa en el POS (**App Config → Membresías Premium**). Dura 1 año exacto. |
+
+- La fuente de verdad es la columna `contacts.membership_expires_at` (DATE, nullable).
+- El backend calcula `is_premium = membership_expires_at != null && membership_expires_at >= today` y lo devuelve en **cada** payload de `customer` (login, register, /me, change-password, upload/delete de foto, PUT /me).
+- La app **NUNCA debe calcular is_premium en el cliente** — si el reloj del teléfono está desincronizado o hay TZ distintas, se rompe. Confiar solo en el bool que devuelve el servidor.
+
+### Contenido con flag `is_premium`
+
+`GET /api/v1/promos` y `GET /api/v1/benefits` incluyen `is_premium: bool` en cada item.
+
+**Regla de UX:**
+- Cliente **premium** (`customer.is_premium == true`) → ve TODOS los items normales.
+- Cliente **no premium** (`customer.is_premium == false`) → los items con `is_premium: true` se muestran **grayed out (escala de grises + opacidad ~50%)** con un overlay/pill que dice **"Paga tu suscripción para acceder"**.
+- **No filtrar del lado del cliente** — los items premium DEBEN mostrarse (grised) para que los no-premium sepan que existe algo por lo que pagar. Es un funnel de conversión.
+
+### Snippet Flutter sugerido
+
+```dart
+Widget premiumWrapper({
+  required bool isPremiumItem,
+  required bool userIsPremium,
+  required Widget child,
+}) {
+  if (!isPremiumItem || userIsPremium) return child;
+
+  return Stack(
+    children: [
+      // Contenido en gris y bajado de opacidad
+      ColorFiltered(
+        colorFilter: const ColorFilter.matrix(<double>[
+          0.2126, 0.7152, 0.0722, 0, 0,
+          0.2126, 0.7152, 0.0722, 0, 0,
+          0.2126, 0.7152, 0.0722, 0, 0,
+          0,      0,      0,      1, 0,
+        ]),
+        child: Opacity(opacity: 0.55, child: child),
+      ),
+      // Overlay con call-to-action
+      Positioned.fill(
+        child: Container(
+          alignment: Alignment.center,
+          color: Colors.black26,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            decoration: BoxDecoration(
+              color: Colors.amber.shade700,
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.lock, size: 16, color: Colors.white),
+                SizedBox(width: 6),
+                Text('Paga tu suscripción para acceder',
+                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+              ],
+            ),
+          ),
+        ),
+      ),
+    ],
+  );
+}
+```
+
+### Refrescar el estado premium
+
+Cuando el admin activa/renueva/cancela una membresía en el POS, el cliente sigue viendo su valor cacheado hasta que la app le pida a `/me` de nuevo. **Recomendación:** llamar `GET /me` al abrir la app y al hacer pull-to-refresh en Home. No es necesario polling agresivo — cambia raramente.
+
+### Endpoints admin (solo referencia — no las consume la app)
+
+Estos viven en el POS bajo `App Config → Membresías Premium` y NO están en `/api/v1`:
+
+- `GET  /app-config/memberships` — pantalla admin
+- `GET  /app-config/memberships/search?q=…` — autocomplete AJAX
+- `POST /app-config/memberships/{id}/activate` — fija `expires_at = hoy + 1 año`
+- `POST /app-config/memberships/{id}/renew` — extiende 1 año desde su fecha vigente (o desde hoy si expiró)
+- `POST /app-config/memberships/{id}/cancel` — `expires_at = null` (efecto inmediato)
+
+Duración fija: 12 meses (constante `MembershipController::DURATION_MONTHS`).
 
 ---
 

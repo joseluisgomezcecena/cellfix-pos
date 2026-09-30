@@ -341,6 +341,15 @@ class AuthController extends Controller
      */
     public static function customerPayload(Contact $c): array
     {
+        // is_premium: true si tiene fecha de expiración y no ha vencido.
+        // La app usa este flag para: (a) desbloquear promos/beneficios premium,
+        // (b) mostrar tarjeta de socio con estilo premium.
+        $today = \Carbon\Carbon::now()->toDateString();
+        $expires = $c->membership_expires_at
+            ? \Carbon\Carbon::parse($c->membership_expires_at)->toDateString()
+            : null;
+        $is_premium = $expires !== null && $expires >= $today;
+
         return [
             'id'                     => $c->id,
             'name'                   => trim(($c->name ?? '') ?: (($c->first_name ?? '') . ' ' . ($c->last_name ?? ''))),
@@ -352,7 +361,8 @@ class AuthController extends Controller
             // La app debe forzar al user a llenarla si viene null.
             'date_of_birth'          => $c->dob ? \Carbon\Carbon::parse($c->dob)->toDateString() : null,
             'membership_no'          => $c->membership_no,
-            'membership_expires_at'  => $c->membership_expires_at,
+            'membership_expires_at'  => $expires,
+            'is_premium'             => $is_premium,
             'photo_url'              => \App\Http\Controllers\Api\V1\PhotoController::urlFor($c->photo_path ?? null),
             'profile_complete'       => !empty($c->first_name) && !empty($c->last_name) && !empty($c->dob),
         ];

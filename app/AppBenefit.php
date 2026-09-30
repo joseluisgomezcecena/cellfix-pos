@@ -10,13 +10,14 @@ class AppBenefit extends Model
         'business_id', 'title', 'description',
         'value_type', 'value', 'value_text',
         'min_purchase', 'conditions', 'target_location_id',
-        'is_active', 'sort_order', 'created_by', 'updated_by',
+        'is_active', 'is_premium', 'sort_order', 'created_by', 'updated_by',
     ];
 
     protected $casts = [
         'value' => 'decimal:2',
         'min_purchase' => 'decimal:2',
         'is_active' => 'boolean',
+        'is_premium' => 'boolean',
     ];
 
     public function location()

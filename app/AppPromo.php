@@ -9,13 +9,14 @@ class AppPromo extends Model
     protected $fillable = [
         'business_id', 'title', 'description', 'image_path',
         'starts_at', 'ends_at', 'target_location_id', 'category',
-        'is_active', 'sort_order', 'created_by', 'updated_by',
+        'is_active', 'is_premium', 'sort_order', 'created_by', 'updated_by',
     ];
 
     protected $casts = [
         'starts_at' => 'date',
         'ends_at' => 'date',
         'is_active' => 'boolean',
+        'is_premium' => 'boolean',
     ];
 
     public function location()

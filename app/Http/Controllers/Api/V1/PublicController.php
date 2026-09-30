@@ -100,6 +100,9 @@ class PublicController extends Controller
             'ends_at' => $p->ends_at?->toDateString(),
             'target_location_id' => $p->target_location_id,
             'image_url' => $p->image_path ? asset('storage/' . $p->image_path) : null,
+            // Si true, la app la muestra en gris con "Paga tu suscripción para acceder"
+            // para clientes no premium. Los premium la ven normal.
+            'is_premium' => (bool) $p->is_premium,
         ])->values();
 
         return response()->json(['success' => true, 'data' => $data]);
@@ -138,6 +141,9 @@ class PublicController extends Controller
             'min_purchase' => $b->min_purchase !== null ? (float) $b->min_purchase : null,
             'conditions' => $b->conditions,
             'target_location_id' => $b->target_location_id,
+            // Si true, la app lo muestra en gris con "Paga tu suscripción para acceder"
+            // para clientes no premium.
+            'is_premium' => (bool) $b->is_premium,
         ])->values();
 
         return response()->json(['success' => true, 'data' => $data]);

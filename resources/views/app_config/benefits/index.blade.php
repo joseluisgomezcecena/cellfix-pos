@@ -35,6 +35,11 @@
                         <tr>
                             <td><span style="font-size:20px; font-weight:bold; color:#2196f3;">{{ $b->displayValue() }}</span></td>
                             <td><strong>{{ $b->title }}</strong>
+                                @if($b->is_premium)
+                                    <span class="label" style="background:#f0ad4e; color:#fff; margin-left:6px;">
+                                        <i class="fa fa-star"></i> Premium
+                                    </span>
+                                @endif
                                 @if($b->description)<br><small class="text-muted">{{ \Str::limit($b->description, 80) }}</small>@endif
                                 @if($b->conditions)<br><small class="text-warning"><em>{{ $b->conditions }}</em></small>@endif
                             </td>
