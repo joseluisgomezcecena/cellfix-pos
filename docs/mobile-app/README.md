@@ -4,13 +4,43 @@ Documento de referencia autosuficiente para desarrollar la app Flutter que consu
 
 ---
 
+## 0. Últimas actualizaciones del backend
+
+Cambios recientes visibles para la app. Los detalles están en las secciones correspondientes.
+
+**2026-09-30 — Módulo Cursos**
+- Cursos programados desde el POS (App Config → Cursos): fecha/hora, sucursal opcional, capacidad (0 = ilimitado), imagen opcional. Los socios se inscriben desde la app.
+- Nuevos endpoints: `GET /courses` (público), `GET /me/courses`, `POST /courses/{id}/enroll`, `DELETE /courses/{id}/enroll` (bearer).
+- Nuevas tablas: `app_courses`, `app_course_enrollments`.
+- Detalles: sección **4.1** (GET público) y **4.3** (endpoints autenticados).
+
+**2026-09-30 — CORS en /storage/* (Flutter Web only)**
+- Web browser bloqueaba imágenes con HTTP 200 pero sin `Access-Control-Allow-Origin`. Fix aplicado del lado backend (server.php + .htaccess). Nada que cambiar en el app; solo actualizar dev/prod. APK Android/iOS no está afectado.
+
+**2026-09-29 — Membresías Premium + gating**
+- `customer.is_premium` (bool) en todos los payloads de cliente. Cada item de `/promos` y `/benefits` trae `is_premium`. Items premium se muestran en gris con "Paga tu suscripción para acceder" para no-premium.
+- La tarjeta de membresía es una sola para todos (background desde `/app-designs`); premium solo lleva un pill dorado "Premium".
+- Detalles: sección **5.5 Premium / Gating**.
+
+**2026-09-29 — Diseños dinámicos**
+- Nuevo endpoint `GET /app-designs` con backgrounds subidos desde el POS (hoy: `membership_card_background`). App usa la URL y hace fallback a asset local si la key no viene.
+- Detalles: sección **4.1**.
+
+**2026-09-29 — Perfil editable + foto de perfil**
+- `PUT /me` (first_name, last_name, date_of_birth obligatorios; email opcional). `POST /me/photo` (multipart) y `DELETE /me/photo`. `customer` ahora trae `first_name`, `last_name`, `date_of_birth`, `photo_url`, `profile_complete`.
+- Detalles: sección **4.3**.
+
+---
+
 ## 1. Contexto de negocio
 
 - **Celfix** — cadena de retail de celulares en Mexicali, MX. 4 sucursales activas: Sucursal Nuevo Mexicali, Sucursal Americas, Sucursal Villa Fontana, Sucursal Benito Juárez. Almacén Equipos central.
 - **Modelo de negocio del app**: "Celfix Socios" — programa de fidelidad para clientes. La app permite:
   - Ver sucursales, promos y beneficios activos (público, sin auth)
+  - Ver cursos y talleres programados; inscribirse/cancelar (bearer)
   - Iniciar sesión con teléfono + password
-  - Ver perfil (membresía + expiración)
+  - Ver perfil (membresía + expiración + is_premium)
+  - Editar datos personales y subir foto de perfil (bearer)
   - Consultar historial de compras
   - Consultar reparaciones en curso / entregadas
   - Cambiar contraseña
