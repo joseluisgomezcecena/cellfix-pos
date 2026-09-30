@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\AppBenefit;
+use App\AppDesign;
 use App\AppPromo;
 use App\BusinessLocation;
 use App\Http\Controllers\Controller;
@@ -140,5 +141,39 @@ class PublicController extends Controller
         ])->values();
 
         return response()->json(['success' => true, 'data' => $data]);
+    }
+
+    /**
+     * GET /api/v1/app-designs
+     * Diseños visuales configurables desde el admin del POS (App Config → Diseños).
+     *
+     * Devuelve un objeto donde cada key es el design_key y el valor es la URL de la
+     * imagen. Las keys que aún no tienen imagen configurada NO se incluyen — la app
+     * debe usar un fallback local en ese caso.
+     *
+     * Respuesta:
+     *   {
+     *     "success": true,
+     *     "designs": {
+     *       "membership_card_background": "https://pos.celfix.mx/storage/app_designs/xxx.jpg"
+     *     }
+     *   }
+     */
+    public function designs(Request $request): JsonResponse
+    {
+        $rows = AppDesign::where('business_id', self::BUSINESS_ID)
+            ->whereNotNull('image_path')
+            ->get();
+
+        $out = [];
+        foreach ($rows as $row) {
+            $url = $row->imageUrl();
+            if ($url) $out[$row->design_key] = $url;
+        }
+
+        return response()->json([
+            'success' => true,
+            'designs' => (object) $out,   // cast a object para que Flutter reciba {} si está vacío, no []
+        ]);
     }
 }

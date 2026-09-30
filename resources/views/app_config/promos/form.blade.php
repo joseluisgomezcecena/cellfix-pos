@@ -52,11 +52,16 @@
         </div>
 
         <div class="form-group">
-            {!! Form::label('image', 'Imagen (opcional, max 2MB):') !!}
-            {!! Form::file('image', ['class' => 'form-control']) !!}
+            {!! Form::label('image', 'Imagen (opcional):') !!}
+            {!! Form::file('image', ['class' => 'form-control', 'accept' => 'image/jpeg,image/png,image/webp']) !!}
+            <div class="alert alert-info" style="margin-top:8px; padding:10px; font-size:13px;">
+                <i class="fa fa-info-circle"></i>
+                <strong>Tamaño recomendado:</strong> 1200 × 675 px (aspect ratio 16:9)<br>
+                <strong>Formatos aceptados:</strong> JPG, PNG, WEBP · <strong>Máximo:</strong> 2 MB
+            </div>
             @if($promo->exists && $promo->image_path)
                 <div style="margin-top:8px;">
-                    <img src="{{ asset('storage/' . $promo->image_path) }}" style="max-width:200px; border:1px solid #ddd;">
+                    <img src="{{ asset('storage/' . $promo->image_path) }}" style="max-width:300px; border:1px solid #ddd; border-radius:4px;">
                     <br><small class="text-muted">Imagen actual. Subir nueva la reemplaza.</small>
                 </div>
             @endif

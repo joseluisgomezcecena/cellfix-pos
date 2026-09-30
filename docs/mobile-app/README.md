@@ -146,6 +146,7 @@ Notas:
 - Filtrado server-side por fecha (`starts_at <= today <= ends_at`) e `is_active = 1`.
 - `image_url` puede ser `null` si no se subió imagen.
 - Orden: `sort_order ASC, id DESC`.
+- **Aspect ratio recomendado en el admin del POS:** 1200 × 675 px (16:9). Diseña tus cards de promo en Flutter asumiendo ese ratio para consistencia visual. Máx 2 MB.
 
 #### `GET /api/v1/benefits?location_id={id}`
 
@@ -177,6 +178,67 @@ Respuesta:
 Notas:
 - `value_type` puede ser: `percentage`, `fixed`, `text`.
 - `display_value` viene pre-formateado por el backend (`"10%"`, `"$50 MXN"`, `"Producto GRATIS"`) — la app solo lo muestra.
+
+#### `GET /api/v1/app-designs`
+
+Imágenes y diseños visuales configurables desde el admin del POS (**App Config → Diseños**). Se usan como fondos, logos o assets dinámicos en la app.
+
+Respuesta:
+```json
+{
+  "success": true,
+  "designs": {
+    "membership_card_background": "https://pos.celfix.mx/storage/app_designs/membership_card_background_ab12cd34.jpg"
+  }
+}
+```
+
+**Keys soportadas actualmente:**
+
+| Key | Uso | Tamaño recomendado | Aspect ratio |
+|---|---|---|---|
+| `membership_card_background` | Fondo de la tarjeta de membresía (detrás del QR y datos del socio) | 1600 × 1000 px | 16:10 |
+
+**Comportamiento:**
+
+- Si una key NO tiene imagen configurada en el POS, **no aparece en la respuesta**. La app debe usar un fallback local (asset propio del bundle Flutter) cuando la key esté ausente.
+- El objeto `designs` es un JSON object (siempre `{}`, nunca `[]`), incluso si está vacío.
+- Se puede cachear (por ejemplo con `cached_network_image`) — cuando el admin sube una imagen nueva, la URL cambia (nombre aleatorio) para invalidar el cache automáticamente.
+
+**Ejemplo de uso en Flutter:**
+
+```dart
+class AppDesigns {
+  final Map<String, String> _designs;
+  AppDesigns(this._designs);
+  String? get membershipCardBackground => _designs['membership_card_background'];
+}
+
+// Al iniciar la app o refrescar
+Future<AppDesigns> fetchDesigns() async {
+  final r = await _dio.get('/app-designs');
+  final map = Map<String, String>.from(r.data['designs'] ?? {});
+  return AppDesigns(map);
+}
+
+// En el widget de la tarjeta:
+final bg = designs.membershipCardBackground;
+DecoratedBox(
+  decoration: BoxDecoration(
+    image: bg != null
+      ? DecorationImage(image: CachedNetworkImageProvider(bg), fit: BoxFit.cover)
+      : DecorationImage(image: AssetImage('assets/card_bg_default.png'), fit: BoxFit.cover),
+    borderRadius: BorderRadius.circular(16),
+  ),
+  child: ...,  // QR + nombre + membership_no
+)
+```
+
+**Notas de negocio:**
+
+- Los futuros diseños (logo, splash screen, banner promocional, etc.) se agregan como nuevas keys en el backend sin cambiar el contrato del endpoint.
+- El admin del POS ve el tamaño recomendado y aspect ratio en el form de subida (`/app-config/designs`).
+- Las imágenes se sirven desde el mismo servidor que el resto de assets (`/storage/app_designs/...`).
 
 ---
 

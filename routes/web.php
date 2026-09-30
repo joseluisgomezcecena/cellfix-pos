@@ -480,6 +480,10 @@ Route::middleware(['setData', 'auth', 'SetSessionData', 'language', 'timezone', 
         Route::resource('promos', \App\Http\Controllers\AppConfig\PromoController::class, ['as' => 'app-config']);
         // Beneficios
         Route::resource('benefits', \App\Http\Controllers\AppConfig\BenefitController::class, ['as' => 'app-config']);
+        // Diseños visuales (backgrounds de tarjeta de membresía, etc.)
+        Route::get('/designs', [\App\Http\Controllers\AppConfig\DesignController::class, 'index'])->name('app-config.designs.index');
+        Route::post('/designs/{key}', [\App\Http\Controllers\AppConfig\DesignController::class, 'update'])->name('app-config.designs.update');
+        Route::delete('/designs/{key}', [\App\Http\Controllers\AppConfig\DesignController::class, 'destroy'])->name('app-config.designs.destroy');
     });
     Route::post('/daily-cuts/vendor-counts', [\App\Http\Controllers\DailyCutController::class, 'saveVendorCounts'])->name('daily-cuts.vendor-counts');
     Route::get('/daily-cuts/export', [\App\Http\Controllers\DailyCutController::class, 'export'])->name('daily-cuts.export');
