@@ -1,3 +1,14 @@
+# CORS para /storage/* — Flutter Web descarga las imágenes por fetch y necesita
+# Access-Control-Allow-Origin. Apache sirve estos estáticos sin pasar por Laravel,
+# así que la middleware HandleCors no los cubre; el header se agrega aquí.
+<IfModule mod_headers.c>
+    SetEnvIf Request_URI "^/storage/" IS_STORAGE_REQUEST
+    Header set Access-Control-Allow-Origin "*" env=IS_STORAGE_REQUEST
+    Header set Access-Control-Allow-Methods "GET, OPTIONS" env=IS_STORAGE_REQUEST
+    Header set Access-Control-Allow-Headers "*" env=IS_STORAGE_REQUEST
+    Header set Vary "Origin" env=IS_STORAGE_REQUEST
+</IfModule>
+
 <IfModule mod_rewrite.c>
     <IfModule mod_negotiation.c>
         Options -MultiViews -Indexes
