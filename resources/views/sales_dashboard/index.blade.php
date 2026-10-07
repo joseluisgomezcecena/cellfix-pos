@@ -241,6 +241,105 @@
         </div>
     @endcomponent
 
+    {{-- EQUIPOS DADOS EN GARANTÍA --}}
+    @component('components.widget', ['class' => 'box-warning', 'title' => 'Equipos dados en garantía'])
+        @if(!empty($warranty_detail))
+            <div class="row" style="margin-bottom:10px;">
+                <div class="col-sm-3"><strong>Cambios:</strong> {{ $warranty_totals['replaced_qty'] }}</div>
+                <div class="col-sm-3"><strong>Reembolsos:</strong> {{ $warranty_totals['refund_qty'] }}
+                    @if($warranty_totals['refund'] > 0)
+                        <small class="text-danger">(-${{ number_format($warranty_totals['refund'], 2) }})</small>
+                    @endif
+                </div>
+                <div class="col-sm-3"><strong>Diferencias cobradas:</strong>
+                    <span style="color:#2e7d32;">+${{ number_format($warranty_totals['diff_in'], 2) }}</span>
+                </div>
+                <div class="col-sm-3"><strong>Diferencias devueltas:</strong>
+                    <span style="color:#c62828;">-${{ number_format($warranty_totals['diff_out'], 2) }}</span>
+                </div>
+            </div>
+        @endif
+        <div class="table-responsive">
+            <table class="table table-bordered table-striped" id="warranty_detail_table" style="font-size:12px;">
+                <thead>
+                    <tr class="bg-yellow">
+                        <th>#</th>
+                        <th>Fecha</th>
+                        <th>Ref.</th>
+                        <th>Cliente</th>
+                        <th>Tipo</th>
+                        <th>Equipo devuelto por el cliente</th>
+                        <th>IMEI devuelto</th>
+                        <th class="text-right">Precio devuelto</th>
+                        <th>Equipo entregado</th>
+                        <th>IMEI entregado</th>
+                        <th class="text-right">Precio entregado</th>
+                        <th class="text-right">Diferencia / Reembolso</th>
+                        <th>Vendedor</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @forelse($warranty_detail as $i => $w)
+                        <tr>
+                            <td>{{ $i + 1 }}</td>
+                            <td>{{ $w['date'] }}</td>
+                            <td>{{ $w['ref'] }}</td>
+                            <td>{{ $w['contact'] ?: '—' }}</td>
+                            <td>
+                                @if($w['type'] === 'refund')
+                                    <span class="label" style="background:#c62828;color:#fff;">{{ $w['type_label'] }}</span>
+                                @elseif($w['type'] === 'replacement_higher')
+                                    <span class="label label-success">{{ $w['type_label'] }}</span>
+                                @elseif($w['type'] === 'replacement_lower')
+                                    <span class="label label-warning">{{ $w['type_label'] }}</span>
+                                @else
+                                    <span class="label label-primary">{{ $w['type_label'] }}</span>
+                                @endif
+                            </td>
+                            <td>
+                                {{ $w['original_name'] ?: '—' }}
+                                @if($w['original_invoice'])
+                                    <br><small class="text-muted">Venta #{{ $w['original_invoice'] }}</small>
+                                @endif
+                            </td>
+                            <td>{{ $w['original_imei'] ?: '—' }}</td>
+                            <td class="text-right">${{ number_format($w['original_price'], 2) }}</td>
+                            <td>{{ $w['replacement_name'] ?: '—' }}</td>
+                            <td>{{ $w['replacement_imei'] ?: '—' }}</td>
+                            <td class="text-right">
+                                @if($w['replacement_price'] !== null)
+                                    ${{ number_format($w['replacement_price'], 2) }}
+                                @else
+                                    —
+                                @endif
+                            </td>
+                            <td class="text-right">
+                                @if($w['refund_amount'] !== null)
+                                    <span style="color:#c62828;">-${{ number_format($w['refund_amount'], 2) }}</span>
+                                    <br><small class="text-muted">{{ strtoupper($w['refund_method']) }}</small>
+                                @elseif($w['price_difference'] !== null)
+                                    @php $pd = $w['price_difference']; @endphp
+                                    <span style="color:{{ $pd >= 0 ? '#2e7d32' : '#c62828' }};">
+                                        {{ $pd >= 0 ? '+' : '' }}${{ number_format($pd, 2) }}
+                                    </span>
+                                    <br><small class="text-muted">{{ strtoupper($w['price_difference_method']) }}</small>
+                                @else
+                                    —
+                                @endif
+                            </td>
+                            <td>{{ $w['vendor'] }}</td>
+                        </tr>
+                    @empty
+                        <tr><td colspan="13" class="text-center text-muted">No se registraron garantías en el período.</td></tr>
+                    @endforelse
+                </tbody>
+            </table>
+        </div>
+        <small class="text-muted">
+            Garantías completadas con fecha de reclamo en el rango seleccionado. "Precio devuelto" = lo que el cliente pagó originalmente por el equipo (de la venta de origen); "Precio entregado" = original + diferencia para cambios de mayor/menor valor, igual al original para cambios por mismo modelo.
+        </small>
+    @endcomponent
+
 </section>
 
 @stop
@@ -255,6 +354,7 @@
         });
         if ($.fn.DataTable) {
             $('#equipos_detail_table').DataTable({ pageLength: 25, order: [] });
+            $('#warranty_detail_table').DataTable({ pageLength: 25, order: [[1, 'desc']] });
         }
 
         @if(session('status'))

@@ -335,10 +335,88 @@ class SalesDashboardController extends Controller
         }
         $allCatVendors = array_keys($allCatVendors);
 
+        // ===== GARANTÍAS =====
+        // Equipos dados en garantía dentro del rango (claim_date). Para cada claim
+        // traemos: equipo devuelto por el cliente + equipo entregado (si fue
+        // replacement), IMEIs (variations.sub_sku) de ambos, precio pagado por el
+        // equipo original en su venta de origen, y precio efectivo del reemplazo
+        // (derivado de original_price + price_difference para higher/lower, igual
+        // al original para replacement_same).
+        $wq = DB::table('warranty_claims as wc')
+            ->leftJoin('contacts as c', 'c.id', '=', 'wc.contact_id')
+            ->leftJoin('transactions as os', 'os.id', '=', 'wc.original_sell_transaction_id')
+            ->leftJoin('variations as vo', 'vo.id', '=', 'wc.original_variation_id')
+            ->leftJoin('variations as vr', 'vr.id', '=', 'wc.replacement_variation_id')
+            ->leftJoin('transaction_sell_lines as tsl', function ($join) {
+                $join->on('tsl.transaction_id', '=', 'wc.original_sell_transaction_id')
+                     ->on('tsl.variation_id', '=', 'wc.original_variation_id');
+            })
+            ->where('wc.business_id', $business_id)
+            ->where('wc.status', 'completed')
+            ->whereBetween('wc.claim_date', [$start_dt, $end_dt]);
+        if (! empty($location_id)) {
+            $wq->where('wc.location_id', $location_id);
+        }
+        $warranty_rows = $wq->select([
+            'wc.id', 'wc.ref_no', 'wc.claim_date', 'wc.claim_type', 'wc.created_by',
+            'wc.original_product_name', 'wc.replacement_product_name',
+            'wc.refund_amount', 'wc.refund_method',
+            'wc.price_difference', 'wc.price_difference_method',
+            'c.name as contact_name',
+            'os.invoice_no as original_invoice',
+            'vo.sub_sku as original_imei',
+            'vr.sub_sku as replacement_imei',
+            DB::raw('COALESCE(tsl.unit_price_inc_tax, vo.default_sell_price) as original_price'),
+        ])->orderByDesc('wc.claim_date')->get();
+
+        $warranty_detail = [];
+        $warranty_totals = ['refund' => 0, 'diff_in' => 0, 'diff_out' => 0, 'replaced_qty' => 0, 'refund_qty' => 0];
+        foreach ($warranty_rows as $r) {
+            $type = $r->claim_type;
+            $original_price = (float) ($r->original_price ?? 0);
+            $diff = $r->price_difference !== null ? (float) $r->price_difference : null;
+            $replacement_price = null;
+            if ($type === 'replacement_same') {
+                $replacement_price = $original_price;
+            } elseif (in_array($type, ['replacement_higher', 'replacement_lower'], true)) {
+                $replacement_price = $original_price + ($diff ?? 0);
+            }
+            if ($type === 'refund') {
+                $warranty_totals['refund'] += (float) ($r->refund_amount ?? 0);
+                $warranty_totals['refund_qty']++;
+            } else {
+                $warranty_totals['replaced_qty']++;
+                if ($diff !== null) {
+                    if ($diff >= 0) $warranty_totals['diff_in'] += $diff;
+                    else $warranty_totals['diff_out'] += abs($diff);
+                }
+            }
+            $warranty_detail[] = [
+                'ref' => $r->ref_no,
+                'date' => Carbon::parse($r->claim_date)->format('d/m/Y H:i'),
+                'contact' => $r->contact_name,
+                'vendor' => $vendorLabel($r->created_by),
+                'type' => $type,
+                'type_label' => \App\WarrantyClaim::claimTypeLabel($type),
+                'original_name' => $r->original_product_name,
+                'original_imei' => $r->original_imei,
+                'original_price' => $original_price,
+                'original_invoice' => $r->original_invoice,
+                'replacement_name' => $r->replacement_product_name,
+                'replacement_imei' => $r->replacement_imei,
+                'replacement_price' => $replacement_price,
+                'refund_amount' => $r->refund_amount !== null ? (float) $r->refund_amount : null,
+                'refund_method' => $r->refund_method,
+                'price_difference' => $diff,
+                'price_difference_method' => $r->price_difference_method,
+            ];
+        }
+
         return compact(
             'start_date', 'start', 'end', 'location_id', 'days',
             'eq_by_day', 'eq_matrix', 'eq_vendors', 'eq_total_qty', 'eq_total_amount',
-            'meta_qty', 'faltan', 'detail', 'buckets', 'goal_loc', 'allCatVendors'
+            'meta_qty', 'faltan', 'detail', 'buckets', 'goal_loc', 'allCatVendors',
+            'warranty_detail', 'warranty_totals'
         );
     }
 
