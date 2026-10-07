@@ -869,7 +869,15 @@ class SellPosController extends Controller
                     $receipt = $this->receiptContent($business_id, $input['location_id'], $transaction->id, null, false, true, $invoice_layout_id);
                 }
 
-                $output = ['success' => 1, 'msg' => $msg, 'receipt' => $receipt];
+                // Expose transaction_id so el JS del POS pueda consultar /sale-sources/should-prompt
+                // y decidir si inyecta el modal de "¿cómo te enteraste de nosotros?" antes del ticket.
+                if (is_array($receipt)) {
+                    $receipt['transaction_id'] = $transaction->id;
+                } elseif (is_object($receipt)) {
+                    $receipt->transaction_id = $transaction->id;
+                }
+
+                $output = ['success' => 1, 'msg' => $msg, 'receipt' => $receipt, 'transaction_id' => $transaction->id];
 
                 if (!empty($whatsapp_link)) {
                     $output['whatsapp_link'] = $whatsapp_link;

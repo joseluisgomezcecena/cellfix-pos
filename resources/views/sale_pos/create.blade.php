@@ -146,4 +146,8 @@
 
     {{-- Promo Code Scripts --}}
     <script src="{{ asset('modules/promocode/js/promo-code-pos.js?v=' . $asset_v) }}"></script>
+
+    {{-- Modal "¿Cómo se enteró de nosotros?" — monkey-patch de pos_print para
+         inyectarlo entre la venta pagada y el ticket (solo cliente nuevo). --}}
+    @include('sale_pos.partials.sale_source_modal')
 @endsection

@@ -1013,6 +1013,11 @@ class AdminSidebarMenu
                                 ['icon' => '', 'active' => request()->segment(1) == 'business-location']
                             );
                             $sub->url(
+                                action([\App\Http\Controllers\SaleSourceController::class, 'index']),
+                                'Orígenes de clientes',
+                                ['icon' => '', 'active' => request()->segment(1) == 'sale-sources']
+                            );
+                            $sub->url(
                                 action([\App\Http\Controllers\CardTerminalController::class, 'index']),
                                 __('lang_v1.card_terminals'),
                                 ['icon' => '', 'active' => request()->segment(1) == 'card-terminals']

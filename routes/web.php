@@ -319,6 +319,12 @@ Route::middleware(['setData', 'auth', 'SetSessionData', 'language', 'timezone', 
     Route::post('business-location/check-location-id', [BusinessLocationController::class, 'checkLocationId']);
     Route::resource('business-location', BusinessLocationController::class);
 
+    // Orígenes de clientes — CRUD + switch del modal + endpoints usados por el POS.
+    Route::post('sale-sources/toggle-modal', [\App\Http\Controllers\SaleSourceController::class, 'toggleModal'])->name('sale-sources.toggle-modal');
+    Route::get('sale-sources/should-prompt/{transaction_id}', [\App\Http\Controllers\SaleSourceController::class, 'shouldPrompt'])->name('sale-sources.should-prompt');
+    Route::post('sale-sources/attach/{transaction_id}', [\App\Http\Controllers\SaleSourceController::class, 'attach'])->name('sale-sources.attach');
+    Route::resource('sale-sources', \App\Http\Controllers\SaleSourceController::class)->except(['show']);
+
     //Invoice layouts..
     Route::resource('invoice-layouts', InvoiceLayoutController::class);
 
