@@ -323,6 +323,8 @@ Route::middleware(['setData', 'auth', 'SetSessionData', 'language', 'timezone', 
     Route::post('sale-sources/toggle-modal', [\App\Http\Controllers\SaleSourceController::class, 'toggleModal'])->name('sale-sources.toggle-modal');
     Route::get('sale-sources/should-prompt/{transaction_id}', [\App\Http\Controllers\SaleSourceController::class, 'shouldPrompt'])->name('sale-sources.should-prompt');
     Route::post('sale-sources/attach/{transaction_id}', [\App\Http\Controllers\SaleSourceController::class, 'attach'])->name('sale-sources.attach');
+    // Reporte accesible desde Contactos → Orígenes (lectura: stats + clientes por origen).
+    Route::get('sale-sources/report', [\App\Http\Controllers\SaleSourceController::class, 'report'])->name('sale-sources.report');
     Route::resource('sale-sources', \App\Http\Controllers\SaleSourceController::class)->except(['show']);
 
     //Invoice layouts..

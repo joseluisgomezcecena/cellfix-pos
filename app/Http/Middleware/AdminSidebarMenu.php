@@ -116,6 +116,13 @@ class AdminSidebarMenu
                                 ['icon' => '', 'active' => request()->segment(1) == 'contacts' && request()->segment(2) == 'import']
                             );
                         }
+                        if (auth()->user()->can('customer.view') || auth()->user()->can('supplier.view')) {
+                            $sub->url(
+                                action([\App\Http\Controllers\SaleSourceController::class, 'report']),
+                                'Orígenes',
+                                ['icon' => '', 'active' => request()->segment(1) == 'sale-sources' && request()->segment(2) == 'report']
+                            );
+                        }
 
                         if (!empty(env('GOOGLE_MAP_API_KEY'))) {
                             $sub->url(

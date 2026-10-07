@@ -171,6 +171,65 @@ class SaleSourceController extends Controller
         return response()->json(['success' => 1, 'msg' => 'Origen registrado.']);
     }
 
+    /**
+     * Reporte accesible desde Contactos → Orígenes. Lista cada origen con
+     * cuántos clientes únicos y cuántas ventas han venido de él. Permite
+     * expandir para ver los contactos de cada origen.
+     */
+    public function report(Request $request)
+    {
+        if (!auth()->user()->can('customer.view')
+            && !auth()->user()->can('supplier.view')
+            && !auth()->user()->can('business_settings.access')
+            && !auth()->user()->can('celfix.sale_sources.access')) {
+            abort(403, 'Unauthorized action.');
+        }
+        $business_id = $request->session()->get('user.business_id');
+
+        $sources = SaleSource::where('business_id', $business_id)
+            ->orderBy('sort_order')->orderBy('id')
+            ->get();
+
+        // Agregados por origen: clientes únicos, # ventas, total facturado.
+        $agg = DB::table('transactions as t')
+            ->leftJoin('contacts as c', 'c.id', '=', 't.contact_id')
+            ->where('t.business_id', $business_id)
+            ->where('t.type', 'sell')
+            ->where('t.status', 'final')
+            ->whereNotNull('t.sale_source_id')
+            ->groupBy('t.sale_source_id')
+            ->select([
+                't.sale_source_id',
+                DB::raw('COUNT(DISTINCT t.contact_id) as unique_customers'),
+                DB::raw('COUNT(t.id) as sales_count'),
+                DB::raw('COALESCE(SUM(t.final_total),0) as revenue'),
+            ])
+            ->get()->keyBy('sale_source_id');
+
+        // Primeros 50 contactos por origen (para la vista expandida).
+        $contacts_by_source = [];
+        foreach ($sources as $s) {
+            $contacts_by_source[$s->id] = DB::table('transactions as t')
+                ->join('contacts as c', 'c.id', '=', 't.contact_id')
+                ->where('t.business_id', $business_id)
+                ->where('t.type', 'sell')
+                ->where('t.status', 'final')
+                ->where('t.sale_source_id', $s->id)
+                ->groupBy('c.id', 'c.name', 'c.mobile')
+                ->select([
+                    'c.id', 'c.name', 'c.mobile',
+                    DB::raw('MIN(t.transaction_date) as first_purchase'),
+                    DB::raw('COUNT(t.id) as sales_count'),
+                    DB::raw('COALESCE(SUM(t.final_total),0) as revenue'),
+                ])
+                ->orderByDesc('revenue')
+                ->limit(50)
+                ->get();
+        }
+
+        return view('sale_source.report', compact('sources', 'agg', 'contacts_by_source'));
+    }
+
     private function validated(Request $request): array
     {
         return $request->validate([
