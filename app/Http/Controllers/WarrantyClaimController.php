@@ -200,6 +200,196 @@ class WarrantyClaimController extends Controller
     }
 
     /**
+     * BÚSQUEDA UNIFICADA de equipos candidatos para registrar una garantía.
+     *
+     * Acepta término libre que puede ser: IMEI (sub_sku), # de folio de venta
+     * (invoice_no), # de garantía (ref_no), teléfono o nombre del cliente.
+     * Devuelve equipos "en manos del cliente" tanto los que vienen de una
+     * venta directa como los que llegaron al cliente como replacement de
+     * una garantía previa (soporte para cadenas).
+     *
+     * Cada resultado incluye los campos que el form necesita para precargar:
+     *   source_type           — 'sell' | 'warranty_replacement'
+     *   source_id             — transaction_id o warranty_claim_id
+     *   root_sell_tx_id       — venta raíz de la cadena (para original_sell_transaction_id del nuevo claim)
+     *   parent_claim_id       — null si viene de venta; el claim previo si viene de replacement
+     *   variation_id          — el equipo específico (variation con IMEI)
+     *   effective_price       — lo que el cliente pagó POR ESE equipo (precio raíz + Σ diffs ancestros)
+     *   chain_blocked         — true si la cadena ya terminó en refund (no se puede reclamar)
+     *   already_returned      — true si el equipo ya fue devuelto en otra garantía
+     */
+    public function searchClaimableEquipment(Request $request)
+    {
+        if (!$this->canUse()) {
+            abort(403);
+        }
+        $business_id = $request->session()->get('user.business_id');
+        $term = trim((string) $request->get('q'));
+        if (mb_strlen($term) < 2) {
+            return response()->json(['data' => []]);
+        }
+
+        $like = '%' . $term . '%';
+        $results = [];
+
+        // === (A) Equipos vendidos — líneas de ventas que podrían reclamarse ===
+        // Filtramos por: IMEI (sub_sku), invoice_no, cliente (nombre/mobile), producto (nombre).
+        $sellLines = DB::table('transaction_sell_lines as tsl')
+            ->join('transactions as t', 't.id', '=', 'tsl.transaction_id')
+            ->join('variations as v', 'v.id', '=', 'tsl.variation_id')
+            ->join('products as p', 'p.id', '=', 'v.product_id')
+            ->leftJoin('contacts as c', 'c.id', '=', 't.contact_id')
+            ->where('t.business_id', $business_id)
+            ->where('t.type', 'sell')
+            ->where('t.status', 'final')
+            ->where('t.is_warranty_exchange', 0)
+            ->where(function ($q) use ($like) {
+                $q->where('v.sub_sku', 'like', $like)
+                    ->orWhere('t.invoice_no', 'like', $like)
+                    ->orWhere('c.name', 'like', $like)
+                    ->orWhere('c.mobile', 'like', $like)
+                    ->orWhere('p.name', 'like', $like);
+            })
+            ->select([
+                't.id as tx_id', 't.invoice_no', 't.transaction_date', 't.location_id', 't.contact_id',
+                'c.name as contact_name', 'c.mobile as contact_mobile',
+                'tsl.variation_id', 'tsl.unit_price_inc_tax',
+                'v.sub_sku',
+                'p.name as product_name',
+            ])
+            ->orderByDesc('t.transaction_date')
+            ->limit(50)
+            ->get();
+
+        foreach ($sellLines as $r) {
+            if (empty($r->variation_id)) continue;
+            $info = $this->resolveEquipmentState($business_id, (int)$r->tx_id, (int)$r->variation_id, null);
+            $results[] = [
+                'source_type' => 'sell',
+                'source_id' => (int)$r->tx_id,
+                'source_label' => 'Venta #' . $r->invoice_no,
+                'root_sell_tx_id' => (int)$r->tx_id,
+                'parent_claim_id' => null,
+                'variation_id' => (int)$r->variation_id,
+                'sub_sku' => $r->sub_sku,
+                'product_name' => $r->product_name,
+                'contact_id' => (int)($r->contact_id ?? 0),
+                'contact_name' => $r->contact_name ?? '—',
+                'contact_mobile' => $r->contact_mobile ?? '',
+                'location_id' => (int)$r->location_id,
+                'date' => Carbon::parse($r->transaction_date)->format('d/m/Y'),
+                'effective_price' => (float)$r->unit_price_inc_tax,
+                'chain_blocked' => $info['chain_blocked'],
+                'already_returned' => $info['already_returned'],
+                'returned_in' => $info['returned_in'],
+            ];
+        }
+
+        // === (B) Equipos entregados en garantías anteriores — candidatos a GAR#2+ ===
+        // Buscamos warranty_claims cuyo replacement coincida con IMEI, ref_no, cliente o producto.
+        $claims = DB::table('warranty_claims as wc')
+            ->leftJoin('variations as v', 'v.id', '=', 'wc.replacement_variation_id')
+            ->leftJoin('products as p', 'p.id', '=', 'v.product_id')
+            ->leftJoin('contacts as c', 'c.id', '=', 'wc.contact_id')
+            ->where('wc.business_id', $business_id)
+            ->where('wc.status', 'completed')
+            ->whereNotNull('wc.replacement_variation_id')
+            ->where(function ($q) use ($like) {
+                $q->where('v.sub_sku', 'like', $like)
+                    ->orWhere('wc.ref_no', 'like', $like)
+                    ->orWhere('c.name', 'like', $like)
+                    ->orWhere('c.mobile', 'like', $like)
+                    ->orWhere('p.name', 'like', $like)
+                    ->orWhere('wc.replacement_product_name', 'like', $like);
+            })
+            ->select([
+                'wc.id as claim_id', 'wc.ref_no', 'wc.claim_date', 'wc.location_id', 'wc.contact_id',
+                'wc.original_sell_transaction_id',
+                'c.name as contact_name', 'c.mobile as contact_mobile',
+                'wc.replacement_variation_id', 'wc.replacement_product_name',
+                'v.sub_sku',
+            ])
+            ->orderByDesc('wc.claim_date')
+            ->limit(50)
+            ->get();
+
+        foreach ($claims as $r) {
+            $claim = WarrantyClaim::find($r->claim_id);
+            if (!$claim) continue;
+            // Precio efectivo DEL EQUIPO ENTREGADO en ese claim = effective_paid_price del CLAIM + su propio price_difference
+            // (es decir, el precio que ahora "tiene" el replacement). Lo recalculamos manualmente:
+            $base = $claim->effectivePaidPrice(); // precio del equipo que devolvió el cliente en ese claim
+            $effective = $base + (float) ($claim->price_difference ?? 0);
+
+            $info = $this->resolveEquipmentState($business_id, null, (int)$r->replacement_variation_id, (int)$r->claim_id);
+            $results[] = [
+                'source_type' => 'warranty_replacement',
+                'source_id' => (int)$r->claim_id,
+                'source_label' => 'Garantía ' . $r->ref_no,
+                'root_sell_tx_id' => $r->original_sell_transaction_id ? (int)$r->original_sell_transaction_id : null,
+                'parent_claim_id' => (int)$r->claim_id,
+                'variation_id' => (int)$r->replacement_variation_id,
+                'sub_sku' => $r->sub_sku,
+                'product_name' => $r->replacement_product_name ?: '—',
+                'contact_id' => (int)($r->contact_id ?? 0),
+                'contact_name' => $r->contact_name ?? '—',
+                'contact_mobile' => $r->contact_mobile ?? '',
+                'location_id' => (int)$r->location_id,
+                'date' => Carbon::parse($r->claim_date)->format('d/m/Y'),
+                'effective_price' => round($effective, 2),
+                'chain_blocked' => $info['chain_blocked'],
+                'already_returned' => $info['already_returned'],
+                'returned_in' => $info['returned_in'],
+            ];
+        }
+
+        return response()->json(['data' => array_slice($results, 0, 80)]);
+    }
+
+    /**
+     * Determina si un equipo todavía está en manos del cliente o ya fue devuelto
+     * en una garantía posterior, y si la cadena ya se cerró con un refund.
+     * Para equipos de venta: busca garantías cuyo original_variation_id coincida
+     * con esa venta+variation. Para equipos de replacement: busca garantías cuyo
+     * parent_claim_id apunte a ese claim.
+     */
+    private function resolveEquipmentState(int $business_id, ?int $sell_tx_id, int $variation_id, ?int $claim_id_as_source): array
+    {
+        $out = ['chain_blocked' => false, 'already_returned' => false, 'returned_in' => null];
+
+        // ¿Hay una garantía que haya devuelto ESTE equipo?
+        $nextQ = WarrantyClaim::where('business_id', $business_id)
+            ->where('status', 'completed')
+            ->where('original_variation_id', $variation_id);
+        if ($claim_id_as_source) {
+            $nextQ->where('parent_claim_id', $claim_id_as_source);
+        } elseif ($sell_tx_id) {
+            $nextQ->where('original_sell_transaction_id', $sell_tx_id)
+                  ->whereNull('parent_claim_id');
+        }
+        $next = $nextQ->first();
+        if ($next) {
+            $out['already_returned'] = true;
+            $out['returned_in'] = $next->ref_no;
+            if ($next->claim_type === 'refund') {
+                $out['chain_blocked'] = true;
+            } else {
+                // Seguir la cadena por si algún descendiente terminó en refund
+                $cursor = $next;
+                $safety = 0;
+                while ($cursor && $safety++ < 50) {
+                    if ($cursor->claim_type === 'refund' && $cursor->status === 'completed') {
+                        $out['chain_blocked'] = true;
+                        break;
+                    }
+                    $cursor = WarrantyClaim::where('parent_claim_id', $cursor->id)->first();
+                }
+            }
+        }
+        return $out;
+    }
+
+    /**
      * Búsqueda de productos para el reemplazo (variaciones con stock en la sucursal dada).
      */
     public function searchReplacementProduct(Request $request)
@@ -265,6 +455,7 @@ class WarrantyClaimController extends Controller
             'original_variation_ids' => 'sometimes|array|min:1',
             'original_variation_ids.*' => 'integer',
             'original_variation_id' => 'sometimes|integer',
+            'parent_claim_id' => 'sometimes|nullable|integer',
             'motivo' => 'required|string|min:5',
             'claim_type' => 'required|in:refund,replacement_same,replacement_higher,replacement_lower',
         ]);
@@ -272,7 +463,18 @@ class WarrantyClaimController extends Controller
         $type = $request->input('claim_type');
         $location_id = (int) $request->input('location_id');
         $original_tx_id = (int) $request->input('original_sell_transaction_id');
+        $parent_claim_id = $request->input('parent_claim_id') ? (int) $request->input('parent_claim_id') : null;
         $motivo = (string) $request->input('motivo');
+
+        // Validación de cadena: si viene parent_claim_id, verificar que exista,
+        // esté completada y que la cadena no se haya cerrado en un refund.
+        if ($parent_claim_id) {
+            $parent = WarrantyClaim::where('business_id', $business_id)->find($parent_claim_id);
+            if (!$parent) return $this->err('La garantía padre no existe.');
+            if ($parent->chainEndedInRefund()) {
+                return $this->err('No se puede registrar: la cadena de garantías de este equipo ya se cerró con un reembolso.');
+            }
+        }
 
         // Resolver lista de variation_ids: array nuevo o single legacy
         $var_ids = $request->input('original_variation_ids');
@@ -466,6 +668,7 @@ class WarrantyClaimController extends Controller
                     'created_by' => $user_id,
                     'contact_id' => $original_tx->contact_id,
                     'original_sell_transaction_id' => $original_tx_id,
+                    'parent_claim_id' => $parent_claim_id,
                     'original_variation_id' => $var_id,
                     'original_product_name' => $line_product_name,
                     'claim_type' => $type,

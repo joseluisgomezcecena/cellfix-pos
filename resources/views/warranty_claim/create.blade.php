@@ -11,6 +11,27 @@
     <form id="warranty_form">
         @csrf
 
+        {{-- Buscador unificado por IMEI / cliente / # garantía — detecta cadena --}}
+        @component('components.widget', ['class' => 'box-success', 'title' => 'Buscar equipo (IMEI, folio, # garantía, cliente)'])
+            <p class="text-muted" style="margin:0 0 10px; font-size:12px;">
+                Si el equipo que te traen vino de una venta directa, el folio de la venta se detecta solo.
+                Si vino como reemplazo de otra garantía (segunda o tercera vuelta), la cadena se enlaza automáticamente.
+                También puedes seguir usando el flujo tradicional abajo si prefieres escribir el folio.
+            </p>
+            <div class="row">
+                <div class="col-md-9">
+                    <input type="text" id="wc_claim_search" class="form-control"
+                        placeholder="IMEI, nombre o teléfono del cliente, # de venta, # de garantía (GAR2026/0001)…"
+                        autocomplete="off">
+                </div>
+                <div class="col-md-3">
+                    <button type="button" class="btn btn-default btn-block" id="wc_claim_clear"><i class="fa fa-eraser"></i> Limpiar</button>
+                </div>
+            </div>
+            <div id="wc_claim_results" style="margin-top:10px;"></div>
+            <input type="hidden" id="wc_parent_claim_id" name="parent_claim_id">
+        @endcomponent
+
         {{-- Paso 1: buscar la venta original --}}
         @component('components.widget', ['class' => 'box-primary', 'title' => '1. Venta original'])
             <div class="row">
@@ -246,6 +267,96 @@
 @section('javascript')
 <script>
 $(function () {
+
+    // ======================================================
+    // BUSCADOR UNIFICADO (soporta cadenas de garantías)
+    // ======================================================
+    var searchTimer = null;
+    $('#wc_claim_search').on('input', function () {
+        var term = $(this).val().trim();
+        clearTimeout(searchTimer);
+        if (term.length < 2) { $('#wc_claim_results').empty(); return; }
+        searchTimer = setTimeout(function () { runClaimSearch(term); }, 350);
+    });
+    $('#wc_claim_clear').on('click', function () {
+        $('#wc_claim_search').val('');
+        $('#wc_claim_results').empty();
+    });
+
+    function runClaimSearch(term) {
+        $('#wc_claim_results').html('<em class="text-muted">Buscando…</em>');
+        $.getJSON('{{ route('warranty-claims.search-claimable') }}', {q: term})
+            .done(function (r) {
+                if (!r.data || r.data.length === 0) {
+                    $('#wc_claim_results').html('<em class="text-muted">Sin resultados. Prueba con el folio exacto en el paso 1.</em>');
+                    return;
+                }
+                var html = '<div class="table-responsive"><table class="table table-condensed table-hover" style="font-size:12px;">' +
+                           '<thead><tr><th>Equipo</th><th>IMEI</th><th>Cliente</th><th>Origen</th><th class="text-right">Precio pagado</th><th>Estado</th><th></th></tr></thead><tbody>';
+                r.data.forEach(function (eq) {
+                    var statusHtml = '<span class="label label-success">Disponible</span>';
+                    var canPick = true;
+                    if (eq.chain_blocked) {
+                        statusHtml = '<span class="label label-danger">Cadena cerrada (refund)</span>';
+                        canPick = false;
+                    } else if (eq.already_returned) {
+                        statusHtml = '<span class="label label-warning">Ya devuelto en ' + eq.returned_in + '</span>';
+                        canPick = false;
+                    }
+                    var btn = canPick
+                        ? '<button type="button" class="btn btn-xs btn-primary wc-pick-equipment">Elegir</button>'
+                        : '<button type="button" class="btn btn-xs btn-default" disabled>No disponible</button>';
+                    html += '<tr data-eq=\'' + JSON.stringify(eq).replace(/\'/g, '&#39;') + '\'>' +
+                            '<td>' + $('<div>').text(eq.product_name).html() + '</td>' +
+                            '<td><code>' + $('<div>').text(eq.sub_sku || '').html() + '</code></td>' +
+                            '<td>' + $('<div>').text(eq.contact_name).html() +
+                                (eq.contact_mobile ? '<br><small class="text-muted">' + eq.contact_mobile + '</small>' : '') + '</td>' +
+                            '<td>' + eq.source_label + '<br><small class="text-muted">' + eq.date + '</small></td>' +
+                            '<td class="text-right">$' + eq.effective_price.toFixed(2) + '</td>' +
+                            '<td>' + statusHtml + '</td>' +
+                            '<td>' + btn + '</td>' +
+                            '</tr>';
+                });
+                html += '</tbody></table></div>';
+                $('#wc_claim_results').html(html);
+            })
+            .fail(function () { $('#wc_claim_results').html('<em class="text-danger">Error de red.</em>'); });
+    }
+
+    // Al elegir un equipo del buscador: precarga folio + ítem + parent_claim_id
+    $(document).on('click', '.wc-pick-equipment', function () {
+        var eq = $(this).closest('tr').data('eq');
+        if (!eq) return;
+        if (!eq.root_sell_tx_id) {
+            toastr.error('No se puede resolver la venta raíz de esta cadena. Usa el flujo tradicional.');
+            return;
+        }
+        $('#wc_original_sell_transaction_id').val(eq.root_sell_tx_id);
+        $('#wc_parent_claim_id').val(eq.parent_claim_id || '');
+        $('#wc_customer_name').text(eq.contact_name + (eq.contact_mobile ? ' — ' + eq.contact_mobile : ''));
+        $('#wc_sale_date').text(eq.date);
+        $('#wc_sale_info_box').show();
+
+        // Pintamos UNA sola fila preseleccionada en la tabla de items
+        var $tbody = $('#wc_items_tbody').empty();
+        var $row = $('<tr>');
+        $row.append('<td class="text-center"><input type="checkbox" class="wc-item-cb" '
+            + 'name="original_variation_ids[]" value="' + eq.variation_id + '" '
+            + 'data-price="' + eq.effective_price + '" checked></td>');
+        $row.append('<td>' + $('<div>').text(eq.product_name).html() + '</td>');
+        $row.append('<td><small><code>' + $('<div>').text(eq.sub_sku || '').html() + '</code></small></td>');
+        $row.append('<td class="text-right">$' + eq.effective_price.toFixed(2) + '</td>');
+        $tbody.append($row);
+        $('#wc_original_line_row').show();
+
+        // Si el equipo viene de una cadena (replacement_previous), avisa al usuario
+        if (eq.parent_claim_id) {
+            toastr.info('Este equipo viene de la garantía ' + eq.source_label.replace(/^Garantía\s*/,'') + '. La nueva se enlazará a esa cadena.', '', {timeOut: 6000});
+        }
+        updateItemsCountHint();
+        recomputePriceDifference();
+        $('html, body').animate({scrollTop: $('#wc_motivo').offset().top - 100}, 400);
+    });
 
     // Buscar venta original
     $('#wc_lookup_sale').on('click', function () {

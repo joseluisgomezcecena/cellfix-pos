@@ -359,6 +359,7 @@ class SalesDashboardController extends Controller
         }
         $warranty_rows = $wq->select([
             'wc.id', 'wc.ref_no', 'wc.claim_date', 'wc.claim_type', 'wc.created_by',
+            'wc.parent_claim_id',
             'wc.original_product_name', 'wc.replacement_product_name',
             'wc.refund_amount', 'wc.refund_method',
             'wc.price_difference', 'wc.price_difference_method',
@@ -369,11 +370,40 @@ class SalesDashboardController extends Controller
             DB::raw('COALESCE(tsl.unit_price_inc_tax, vo.default_sell_price) as original_price'),
         ])->orderByDesc('wc.claim_date')->get();
 
+        // Para claims en cadena (parent_claim_id != NULL), el "precio devuelto" por el
+        // cliente debe reflejar lo que pagó la última vez por ese equipo: precio raíz
+        // + Σ price_difference de todos los ancestros. Cargamos un mapa compacto de
+        // TODOS los claims del business (id → [parent, diff]) para subir la cadena
+        // sin queries extra por fila.
+        $claim_chain_map = DB::table('warranty_claims')
+            ->where('business_id', $business_id)
+            ->select(['id', 'parent_claim_id', 'price_difference', 'status'])
+            ->get()->keyBy('id');
+        $sumAncestorDiffs = function ($claim_id) use ($claim_chain_map) {
+            $sum = 0.0;
+            $cursor = $claim_chain_map[$claim_id] ?? null;
+            $safety = 0;
+            while ($cursor && $cursor->parent_claim_id && $safety++ < 50) {
+                $parent = $claim_chain_map[$cursor->parent_claim_id] ?? null;
+                if (!$parent) break;
+                if ($parent->status !== 'cancelled' && $parent->price_difference !== null) {
+                    $sum += (float) $parent->price_difference;
+                }
+                $cursor = $parent;
+            }
+            return $sum;
+        };
+
         $warranty_detail = [];
         $warranty_totals = ['refund' => 0, 'diff_in' => 0, 'diff_out' => 0, 'replaced_qty' => 0, 'refund_qty' => 0];
         foreach ($warranty_rows as $r) {
             $type = $r->claim_type;
             $original_price = (float) ($r->original_price ?? 0);
+            // Si el claim está en cadena, el precio devuelto efectivo es
+            // precio_raíz + Σ diffs de ancestros (lo que el cliente pagó la última vez).
+            if ($r->parent_claim_id) {
+                $original_price += $sumAncestorDiffs((int) $r->id);
+            }
             $diff = $r->price_difference !== null ? (float) $r->price_difference : null;
             $replacement_price = null;
             if ($type === 'replacement_same') {

@@ -389,6 +389,8 @@ Route::middleware(['setData', 'auth', 'SetSessionData', 'language', 'timezone', 
     // Garantías (Warranty Claims)
     Route::get('warranty-claims/get-sell-products', [\App\Http\Controllers\WarrantyClaimController::class, 'getSellProducts'])->name('warranty-claims.get-sell-products');
     Route::get('warranty-claims/search-product', [\App\Http\Controllers\WarrantyClaimController::class, 'searchReplacementProduct'])->name('warranty-claims.search-product');
+    // Buscador unificado para encontrar equipos en manos del cliente — soporta cadena de garantías.
+    Route::get('warranty-claims/search-claimable', [\App\Http\Controllers\WarrantyClaimController::class, 'searchClaimableEquipment'])->name('warranty-claims.search-claimable');
     Route::get('warranty-claims/print/{id}', [\App\Http\Controllers\WarrantyClaimController::class, 'printTicket'])->name('warranty-claims.print');
     Route::post('warranty-claims/{id}/cancel', [\App\Http\Controllers\WarrantyClaimController::class, 'cancel'])->name('warranty-claims.cancel');
     Route::resource('warranty-claims', \App\Http\Controllers\WarrantyClaimController::class)->except(['edit', 'update']);
