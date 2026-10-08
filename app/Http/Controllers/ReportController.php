@@ -1964,6 +1964,10 @@ class ReportController extends Controller
             }
 
             return Datatables::of($query)
+                // smart(false): trata el search como frase completa en vez de
+                // tokenizar por espacios. Sin esto "iphone 17" splittea en
+                // ["iphone","17"] y "17" matchea IMEIs de 15 dígitos aleatorios.
+                ->smart(false)
                 // Búsqueda del DataTable: expande el filtro a p.name, p.sku,
                 // pv.name, v.name, v.sub_sku. Sin esto Yajra solo busca en p.name
                 // y los términos como "17 pro max" nunca filtran cuando p.name
@@ -2172,6 +2176,10 @@ class ReportController extends Controller
             }
 
             return Datatables::of($query)
+                // smart(false): trata el search como frase completa en vez de
+                // tokenizar por espacios. Sin esto "iphone 17" splittea en
+                // ["iphone","17"] y "17" matchea IMEIs de 15 dígitos aleatorios.
+                ->smart(false)
                 // Búsqueda del DataTable: expande el filtro a p.name, p.sku,
                 // pv.name, v.name, v.sub_sku. Sin esto Yajra solo busca en p.name
                 // y los términos como "17 pro max" nunca filtran cuando p.name

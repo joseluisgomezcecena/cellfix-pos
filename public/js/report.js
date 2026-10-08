@@ -893,6 +893,10 @@ $(document).ready(function() {
             processing: true,
             serverSide: true,
             fixedHeader:false,
+            // Smart search OFF: trata el término como frase completa en vez de
+            // tokenizarlo por espacios. Sin esto, "iphone 17" matchea "iphone 16"
+            // porque el token "17" aparece aleatoriamente en IMEIs de 15 dígitos.
+            search: { smart: false },
             aaSorting: [[6, 'desc']],
             ajax: {
                 url: '/reports/product-sell-report',
@@ -959,6 +963,7 @@ $(document).ready(function() {
         processing: true,
         serverSide: true,
         fixedHeader:false,
+        search: { smart: false },
         aaSorting: [[4, 'desc']],
         ajax: {
             url: '/reports/product-sell-report-with-purchase',
@@ -1011,6 +1016,7 @@ $(document).ready(function() {
         processing: true,
         serverSide: true,
         fixedHeader:false,
+        search: { smart: false },
         aaSorting: [[1, 'desc']],
         ajax: {
             url: '/reports/product-sell-grouped-report',
@@ -1062,7 +1068,7 @@ $(document).ready(function() {
     });
 
     $(
-        '#psr_customer_group_id, #psr_filter_category_id, #psr_filter_brand_id, #product_sell_report_form #variation_id, #product_sell_report_form #location_id, #product_sell_report_form #customer_id'
+        '#psr_customer_group_id, #psr_filter_category_id, #psr_filter_sub_category_id, #psr_filter_brand_id, #product_sell_report_form #variation_id, #product_sell_report_form #location_id, #product_sell_report_form #customer_id'
     ).change(function() {
         product_sell_report.ajax.reload();
         product_sell_grouped_report.ajax.reload();
