@@ -1950,7 +1950,11 @@ class ReportController extends Controller
             }
 
             $category_id = $request->get('category_id', null);
-            if (! empty($category_id)) {
+            $sub_category_id = $request->get('sub_category_id', null);
+            // Prioridad: sub-categoría > categoría. Si viene sub, filtramos por esa.
+            if (! empty($sub_category_id)) {
+                $query->where('p.category_id', $sub_category_id);
+            } elseif (! empty($category_id)) {
                 $query->where('p.category_id', $category_id);
             }
 
@@ -1960,6 +1964,19 @@ class ReportController extends Controller
             }
 
             return Datatables::of($query)
+                // Búsqueda del DataTable: expande el filtro a p.name, p.sku,
+                // pv.name, v.name, v.sub_sku. Sin esto Yajra solo busca en p.name
+                // y los términos como "17 pro max" nunca filtran cuando p.name
+                // es genérico ("EQUIPO") y el modelo real está en la variación.
+                ->filterColumn('product_name', function ($query, $keyword) {
+                    $query->where(function ($q) use ($keyword) {
+                        $q->where('p.name', 'like', "%{$keyword}%")
+                          ->orWhere('p.sku', 'like', "%{$keyword}%")
+                          ->orWhere('pv.name', 'like', "%{$keyword}%")
+                          ->orWhere('v.name', 'like', "%{$keyword}%")
+                          ->orWhere('v.sub_sku', 'like', "%{$keyword}%");
+                    });
+                })
                 ->editColumn('product_name', function ($row) {
                     $product_name = $row->product_name;
                     if ($row->product_type == 'variable') {
@@ -2141,7 +2158,11 @@ class ReportController extends Controller
             }
 
             $category_id = $request->get('category_id', null);
-            if (! empty($category_id)) {
+            $sub_category_id = $request->get('sub_category_id', null);
+            // Prioridad: sub-categoría > categoría. Si viene sub, filtramos por esa.
+            if (! empty($sub_category_id)) {
+                $query->where('p.category_id', $sub_category_id);
+            } elseif (! empty($category_id)) {
                 $query->where('p.category_id', $category_id);
             }
 
@@ -2151,6 +2172,19 @@ class ReportController extends Controller
             }
 
             return Datatables::of($query)
+                // Búsqueda del DataTable: expande el filtro a p.name, p.sku,
+                // pv.name, v.name, v.sub_sku. Sin esto Yajra solo busca en p.name
+                // y los términos como "17 pro max" nunca filtran cuando p.name
+                // es genérico ("EQUIPO") y el modelo real está en la variación.
+                ->filterColumn('product_name', function ($query, $keyword) {
+                    $query->where(function ($q) use ($keyword) {
+                        $q->where('p.name', 'like', "%{$keyword}%")
+                          ->orWhere('p.sku', 'like', "%{$keyword}%")
+                          ->orWhere('pv.name', 'like', "%{$keyword}%")
+                          ->orWhere('v.name', 'like', "%{$keyword}%")
+                          ->orWhere('v.sub_sku', 'like', "%{$keyword}%");
+                    });
+                })
                 ->editColumn('product_name', function ($row) {
                     $product_name = $row->product_name;
                     if ($row->product_type == 'variable') {
@@ -2779,7 +2813,10 @@ class ReportController extends Controller
             }
 
             $category_id = $request->get('category_id', null);
-            if (! empty($category_id)) {
+            $sub_category_id = $request->get('sub_category_id', null);
+            if (! empty($sub_category_id)) {
+                $query->where('p.category_id', $sub_category_id);
+            } elseif (! empty($category_id)) {
                 $query->where('p.category_id', $category_id);
             }
 

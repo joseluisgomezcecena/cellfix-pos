@@ -62,6 +62,12 @@
                 </div>
                 <div class="col-md-3">
                     <div class="form-group">
+                        {!! Form::label('sub_category_id', 'Sub categoría:') !!}
+                        {!! Form::select('sub_category_id', [], null, ['class' => 'form-control select2', 'style' => 'width:100%', 'id' => 'psr_filter_sub_category_id', 'placeholder' => 'Todas']); !!}
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="form-group">
                         {!! Form::label('brand_id', __('product.brand') . ':') !!}
                         {!! Form::select('brand_id', $brands, null, ['class' => 'form-control select2', 'style' => 'width:100%', 'id' => 'psr_filter_brand_id', 'placeholder' => __('lang_v1.all')]); !!}
                     </div>
@@ -215,9 +221,34 @@
     <script src="{{ asset('js/report.js?v=' . $asset_v) }}"></script>
     <script type="text/javascript">
         $(
-        '#product_sell_report_form #location_id, #product_sell_report_form #customer_id, #psr_filter_brand_id, #psr_filter_category_id, #psr_customer_group_id'
+        '#product_sell_report_form #location_id, #product_sell_report_form #customer_id, #psr_filter_brand_id, #psr_filter_category_id, #psr_filter_sub_category_id, #psr_customer_group_id'
     ).change(function() {
         $('.nav-tabs li.active').find('a[data-toggle="tab"]').trigger('shown.bs.tab');
+    });
+
+    // Al cambiar categoría padre, cargar las sub-categorías. Si la cat es "Todas",
+    // vacía el select de sub. El endpoint getSubCategories ya devuelve HTML <option>.
+    $('#psr_filter_category_id').on('change', function () {
+        var catId = $(this).val();
+        var $sub = $('#psr_filter_sub_category_id');
+        $sub.empty().append('<option value="">Todas</option>').trigger('change');
+        if (!catId) return;
+        $.ajax({
+            url: '/products/get_sub_categories',
+            method: 'POST',
+            data: { _token: $('meta[name="csrf-token"]').attr('content') || $('input[name="_token"]').val(), cat_id: catId },
+            success: function (html) {
+                // El endpoint devuelve <option value=""> + lista. Agregamos manteniendo "Todas".
+                var $tmp = $('<div>').html(html);
+                $tmp.find('option').each(function () {
+                    var v = $(this).attr('value'), t = $(this).text();
+                    if (v && v !== '' && t !== 'None') {
+                        $sub.append('<option value="' + v + '">' + t + '</option>');
+                    }
+                });
+                $sub.trigger('change');
+            }
+        });
     });
         $(document).ready( function() {
             $('a[data-toggle="tab"]').on('shown.bs.tab', function (e) {
@@ -250,6 +281,7 @@
                                         d.end_date = end;
                                         d.group_by = 'category';
                                         d.category_id = $('select#psr_filter_category_id').val();
+                                        d.sub_category_id = $('select#psr_filter_sub_category_id').val();
                                         d.brand_id = $('select#psr_filter_brand_id').val();
                                         d.customer_id = $('select#customer_id').val();
                                         d.location_id = $('select#location_id').val();
@@ -307,6 +339,7 @@
                                         d.end_date = end;
                                         d.group_by = 'brand';
                                         d.category_id = $('select#psr_filter_category_id').val();
+                                        d.sub_category_id = $('select#psr_filter_sub_category_id').val();
                                         d.brand_id = $('select#psr_filter_brand_id').val();
                                         d.customer_id = $('select#customer_id').val();
                                         d.location_id = $('select#location_id').val();

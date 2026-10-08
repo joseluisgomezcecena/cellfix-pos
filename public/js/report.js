@@ -920,6 +920,7 @@ $(document).ready(function() {
                     d.customer_id = $('select#customer_id').val();
                     d.location_id = $('select#location_id').val();
                     d.category_id = $('select#psr_filter_category_id').val();
+                    d.sub_category_id = $('select#psr_filter_sub_category_id').val();
                     d.brand_id = $('select#psr_filter_brand_id').val();
                     d.customer_group_id = $('#psr_customer_group_id').val();
                 },
@@ -984,6 +985,7 @@ $(document).ready(function() {
                 d.customer_id = $('select#customer_id').val();
                 d.location_id = $('select#location_id').val();
                 d.category_id = $('select#psr_filter_category_id').val();
+                d.sub_category_id = $('select#psr_filter_sub_category_id').val();
                 d.brand_id = $('select#psr_filter_brand_id').val();
                 d.customer_group_id = $('#psr_customer_group_id').val();
             },
@@ -1035,6 +1037,7 @@ $(document).ready(function() {
                 d.customer_id = $('select#customer_id').val();
                 d.location_id = $('select#location_id').val();
                 d.category_id = $('select#psr_filter_category_id').val();
+                d.sub_category_id = $('select#psr_filter_sub_category_id').val();
                 d.brand_id = $('select#psr_filter_brand_id').val();
                 d.customer_group_id = $('#psr_customer_group_id').val();
             },
