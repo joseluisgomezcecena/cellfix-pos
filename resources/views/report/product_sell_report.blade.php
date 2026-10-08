@@ -227,40 +227,46 @@
     });
 
         $(document).ready( function() {
-            // Al cambiar categoría padre, carga las sub-categorías vía AJAX.
-            // Después del populate re-inicializamos Select2 para que muestre
-            // las nuevas opciones (Select2 cachea su dropdown internamente y no
-            // detecta <option> agregados por DOM manipulation).
-            $('#psr_filter_category_id').off('change.subcat').on('change.subcat', function () {
+            // Al cambiar categoría padre → cargar sub-categorías vía AJAX.
+            // Event delegation: funciona aunque Select2 reemplace el DOM.
+            // Después del populate re-inicializamos Select2 porque cachea su
+            // dropdown y no detecta <option> agregados por DOM manipulation.
+            $(document).off('change.subcat', '#psr_filter_category_id')
+                       .on('change.subcat', '#psr_filter_category_id', function () {
                 var catId = $(this).val();
                 var $sub = $('#psr_filter_sub_category_id');
-                $sub.html('<option value="">Todas</option>');
-                // Reinicializar Select2 para reflejar el vaciado
+                console.log('[subcat] category changed, catId=', catId);
+                // Limpia y reinit Select2 para refrescar
+                $sub.empty().append('<option value="">Todas</option>');
                 if ($sub.hasClass('select2-hidden-accessible')) {
                     $sub.select2('destroy');
                 }
                 $sub.select2({ placeholder: 'Todas', width: '100%' });
-                if (!catId) return;
+                if (!catId) { console.log('[subcat] no catId, abort'); return; }
                 $.ajax({
                     url: '/products/get_sub_categories',
                     method: 'POST',
-                    data: {
-                        _token: '{{ csrf_token() }}',
-                        cat_id: catId
-                    },
+                    data: { _token: '{{ csrf_token() }}', cat_id: catId },
                     success: function (html) {
+                        console.log('[subcat] AJAX success, html=', html);
+                        var count = 0;
                         var $tmp = $('<div>').html(html);
                         $tmp.find('option').each(function () {
                             var v = $(this).attr('value'), t = $(this).text();
                             if (v && v !== '' && t !== 'None') {
                                 $sub.append('<option value="' + v + '">' + t + '</option>');
+                                count++;
                             }
                         });
-                        // Reinicializar Select2 para que vea las nuevas opciones
+                        console.log('[subcat] added ' + count + ' options');
                         if ($sub.hasClass('select2-hidden-accessible')) {
                             $sub.select2('destroy');
                         }
                         $sub.select2({ placeholder: 'Todas', width: '100%' });
+                    },
+                    error: function (xhr, status, err) {
+                        console.error('[subcat] AJAX FAIL', xhr.status, status, err, xhr.responseText);
+                        toastr.error('No se pudieron cargar las sub-categorías: ' + xhr.status + ' ' + status);
                     }
                 });
             });
