@@ -1964,15 +1964,18 @@ class ReportController extends Controller
             }
 
             return Datatables::of($query)
-                // smart(false): trata el search como frase completa en vez de
-                // tokenizar por espacios. Sin esto "iphone 17" splittea en
+                // setMultiTerm(false): trata el search como frase completa en vez
+                // de tokenizar por espacios. Sin esto "iphone 17" splittea en
                 // ["iphone","17"] y "17" matchea IMEIs de 15 dígitos aleatorios.
-                ->smart(false)
+                // Yajra v9: el método es setMultiTerm, no smart (smart() afecta otra cosa).
+                ->setMultiTerm(false)
                 // Búsqueda del DataTable: expande el filtro a p.name, p.sku,
                 // pv.name, v.name, v.sub_sku. Sin esto Yajra solo busca en p.name
                 // y los términos como "17 pro max" nunca filtran cuando p.name
                 // es genérico ("EQUIPO") y el modelo real está en la variación.
-                ->filterColumn('product_name', function ($query, $keyword) {
+                // IMPORTANTE: el primer argumento es el `name` del DataTable
+                // (p.name) NO el `data` (product_name). Yajra identifica por name.
+                ->filterColumn('p.name', function ($query, $keyword) {
                     $query->where(function ($q) use ($keyword) {
                         $q->where('p.name', 'like', "%{$keyword}%")
                           ->orWhere('p.sku', 'like', "%{$keyword}%")
@@ -2176,15 +2179,18 @@ class ReportController extends Controller
             }
 
             return Datatables::of($query)
-                // smart(false): trata el search como frase completa en vez de
-                // tokenizar por espacios. Sin esto "iphone 17" splittea en
+                // setMultiTerm(false): trata el search como frase completa en vez
+                // de tokenizar por espacios. Sin esto "iphone 17" splittea en
                 // ["iphone","17"] y "17" matchea IMEIs de 15 dígitos aleatorios.
-                ->smart(false)
+                // Yajra v9: el método es setMultiTerm, no smart (smart() afecta otra cosa).
+                ->setMultiTerm(false)
                 // Búsqueda del DataTable: expande el filtro a p.name, p.sku,
                 // pv.name, v.name, v.sub_sku. Sin esto Yajra solo busca en p.name
                 // y los términos como "17 pro max" nunca filtran cuando p.name
                 // es genérico ("EQUIPO") y el modelo real está en la variación.
-                ->filterColumn('product_name', function ($query, $keyword) {
+                // IMPORTANTE: el primer argumento es el `name` del DataTable
+                // (p.name) NO el `data` (product_name). Yajra identifica por name.
+                ->filterColumn('p.name', function ($query, $keyword) {
                     $query->where(function ($q) use ($keyword) {
                         $q->where('p.name', 'like', "%{$keyword}%")
                           ->orWhere('p.sku', 'like', "%{$keyword}%")
