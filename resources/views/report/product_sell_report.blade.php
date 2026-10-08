@@ -226,31 +226,37 @@
         $('.nav-tabs li.active').find('a[data-toggle="tab"]').trigger('shown.bs.tab');
     });
 
-    // Al cambiar categoría padre, cargar las sub-categorías. Si la cat es "Todas",
-    // vacía el select de sub. El endpoint getSubCategories ya devuelve HTML <option>.
-    $('#psr_filter_category_id').on('change', function () {
-        var catId = $(this).val();
-        var $sub = $('#psr_filter_sub_category_id');
-        $sub.empty().append('<option value="">Todas</option>').trigger('change');
-        if (!catId) return;
-        $.ajax({
-            url: '/products/get_sub_categories',
-            method: 'POST',
-            data: { _token: $('meta[name="csrf-token"]').attr('content') || $('input[name="_token"]').val(), cat_id: catId },
-            success: function (html) {
-                // El endpoint devuelve <option value=""> + lista. Agregamos manteniendo "Todas".
-                var $tmp = $('<div>').html(html);
-                $tmp.find('option').each(function () {
-                    var v = $(this).attr('value'), t = $(this).text();
-                    if (v && v !== '' && t !== 'None') {
-                        $sub.append('<option value="' + v + '">' + t + '</option>');
+        $(document).ready( function() {
+            // Al cambiar categoría padre, carga las sub-categorías vía AJAX.
+            // IMPORTANTE: NO disparamos trigger('change') en el sub-select durante
+            // el populate — eso cascadea reloads innecesarios y puede confundir
+            // Select2. Solo rellenamos opciones; el usuario dispara el change
+            // cuando él elige una sub-cat.
+            $('#psr_filter_category_id').off('change.subcat').on('change.subcat', function () {
+                var catId = $(this).val();
+                var $sub = $('#psr_filter_sub_category_id');
+                $sub.html('<option value="">Todas</option>');
+                if (!catId) return;
+                $.ajax({
+                    url: '/products/get_sub_categories',
+                    method: 'POST',
+                    data: {
+                        _token: '{{ csrf_token() }}',
+                        cat_id: catId
+                    },
+                    success: function (html) {
+                        var $tmp = $('<div>').html(html);
+                        $tmp.find('option').each(function () {
+                            var v = $(this).attr('value'), t = $(this).text();
+                            if (v && v !== '' && t !== 'None') {
+                                $sub.append('<option value="' + v + '">' + t + '</option>');
+                            }
+                        });
                     }
                 });
-                $sub.trigger('change');
-            }
-        });
-    });
-        $(document).ready( function() {
+            });
+
+            $('a[data-toggle="tab"]').on('shown.bs.tab', function (e) {
             $('a[data-toggle="tab"]').on('shown.bs.tab', function (e) {
                 var target = $(e.target).attr('href');
                 if ( target == '#psr_by_cat_tab') {
