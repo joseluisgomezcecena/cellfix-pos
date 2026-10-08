@@ -228,14 +228,18 @@
 
         $(document).ready( function() {
             // Al cambiar categoría padre, carga las sub-categorías vía AJAX.
-            // IMPORTANTE: NO disparamos trigger('change') en el sub-select durante
-            // el populate — eso cascadea reloads innecesarios y puede confundir
-            // Select2. Solo rellenamos opciones; el usuario dispara el change
-            // cuando él elige una sub-cat.
+            // Después del populate re-inicializamos Select2 para que muestre
+            // las nuevas opciones (Select2 cachea su dropdown internamente y no
+            // detecta <option> agregados por DOM manipulation).
             $('#psr_filter_category_id').off('change.subcat').on('change.subcat', function () {
                 var catId = $(this).val();
                 var $sub = $('#psr_filter_sub_category_id');
                 $sub.html('<option value="">Todas</option>');
+                // Reinicializar Select2 para reflejar el vaciado
+                if ($sub.hasClass('select2-hidden-accessible')) {
+                    $sub.select2('destroy');
+                }
+                $sub.select2({ placeholder: 'Todas', width: '100%' });
                 if (!catId) return;
                 $.ajax({
                     url: '/products/get_sub_categories',
@@ -252,6 +256,11 @@
                                 $sub.append('<option value="' + v + '">' + t + '</option>');
                             }
                         });
+                        // Reinicializar Select2 para que vea las nuevas opciones
+                        if ($sub.hasClass('select2-hidden-accessible')) {
+                            $sub.select2('destroy');
+                        }
+                        $sub.select2({ placeholder: 'Todas', width: '100%' });
                     }
                 });
             });
