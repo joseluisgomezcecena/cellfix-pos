@@ -214,6 +214,16 @@ class StoreRepairController extends Controller
             }
 
             return DataTables::of($q)
+                // Fix bug 1583: Yajra genera LOWER(col) LIKE %x% para la búsqueda
+                // global, pero LOWER() no se puede aplicar a DATETIME ni DECIMAL
+                // en MySQL 8+, y mal escapa el alias `created_by_name` (raw CONCAT).
+                // Deshabilitamos la búsqueda para esas columnas con filterColumn
+                // vacío. Para created_by_name hacemos filterColumn real sobre el CONCAT.
+                ->filterColumn('created_at', function () {})
+                ->filterColumn('commission', function () {})
+                ->filterColumn('created_by_name', function ($query, $keyword) {
+                    $query->whereRaw("CONCAT(COALESCE(u.first_name,''),' ',COALESCE(u.last_name,'')) LIKE ?", ["%{$keyword}%"]);
+                })
                 ->editColumn('created_at', fn($r) => Carbon::parse($r->created_at)->format('d/m/Y H:i'))
                 ->editColumn('commission', fn($r) => '$' . number_format((float) $r->commission, 2))
                 ->editColumn('status', function ($r) {
