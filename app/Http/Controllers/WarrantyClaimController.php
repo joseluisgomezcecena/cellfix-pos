@@ -85,6 +85,28 @@ class WarrantyClaimController extends Controller
             }
 
             return DataTables::of($q)
+                // Fix bug 1583 (igual que StoreRepair): Yajra aplica LOWER() a
+                // todas las columnas searchable:true. Falla con:
+                //  - claim_date (DATETIME, no soporta LOWER en MySQL 8+)
+                //  - amount (addColumn PHP puro, no existe en SQL)
+                //  - created_by_name (alias de CONCAT raw, Yajra lo escapa mal)
+                ->filterColumn('claim_date', function () {})
+                ->filterColumn('amount', function () {})
+                ->filterColumn('created_by_name', function ($query, $keyword) {
+                    $query->whereRaw("CONCAT(COALESCE(u.surname,''),' ',COALESCE(u.first_name,''),' ',COALESCE(u.last_name,'')) LIKE ?", ["%{$keyword}%"]);
+                })
+                // Columnas con alias de tabla joined: Yajra las busca por default en
+                // warranty_claims.X y falla con "Column not found". Redirigimos a la
+                // columna real de la tabla joined.
+                ->filterColumn('original_invoice', function ($query, $keyword) {
+                    $query->where('t.invoice_no', 'like', "%{$keyword}%");
+                })
+                ->filterColumn('location_name', function ($query, $keyword) {
+                    $query->where('bl.name', 'like', "%{$keyword}%");
+                })
+                ->filterColumn('customer_name', function ($query, $keyword) {
+                    $query->where('c.name', 'like', "%{$keyword}%");
+                })
                 ->editColumn('claim_date', function ($r) {
                     return Carbon::parse($r->claim_date)->format('d/m/Y H:i');
                 })
