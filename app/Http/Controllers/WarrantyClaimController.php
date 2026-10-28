@@ -468,11 +468,15 @@ class WarrantyClaimController extends Controller
 
         // Validación de cadena: si viene parent_claim_id, verificar que exista,
         // esté completada y que la cadena no se haya cerrado en un refund.
+        $parent = null;
         if ($parent_claim_id) {
             $parent = WarrantyClaim::where('business_id', $business_id)->find($parent_claim_id);
             if (!$parent) return $this->err('La garantía padre no existe.');
             if ($parent->chainEndedInRefund()) {
                 return $this->err('No se puede registrar: la cadena de garantías de este equipo ya se cerró con un reembolso.');
+            }
+            if (empty($parent->replacement_variation_id)) {
+                return $this->err('La garantía padre no entregó equipo de reemplazo, no se puede encadenar.');
             }
         }
 
@@ -498,24 +502,48 @@ class WarrantyClaimController extends Controller
 
         $original_tx = Transaction::where('business_id', $business_id)->findOrFail($original_tx_id);
 
-        // Cargar TODAS las líneas seleccionadas de la venta en una sola query.
-        $original_lines_by_var = TransactionSellLine::where('transaction_id', $original_tx_id)
-            ->whereIn('variation_id', $var_ids)
-            ->get()
-            ->keyBy('variation_id');
+        if ($parent) {
+            // GAR#2+ (segunda vuelta o más): el equipo que el cliente devuelve NO vive
+            // en transaction_sell_lines — vino como `replacement_variation_id` del
+            // claim padre. Validamos contra eso y construimos una "línea virtual" con
+            // los datos necesarios (precio efectivo = lo que pagó la última vez por él).
+            if (count($var_ids) !== 1 || (int) $var_ids[0] !== (int) $parent->replacement_variation_id) {
+                return $this->err('El equipo seleccionado no coincide con el entregado en la garantía anterior.');
+            }
+            // Precio efectivo del equipo entregado en el padre = effectivePaidPrice del padre
+            // + su propio price_difference. Es lo que el cliente efectivamente pagó por este
+            // equipo (siguiendo las reglas de la cadena).
+            $effective_price = $parent->effectivePaidPrice() + (float) ($parent->price_difference ?? 0);
+            $virtual_line = (object) [
+                'variation_id' => (int) $parent->replacement_variation_id,
+                'product_id' => Variation::where('id', $parent->replacement_variation_id)->value('product_id'),
+                'unit_price_inc_tax' => $effective_price,
+                'quantity' => 1,
+                'technician_id' => null,
+                'technician_commission_override' => null,
+            ];
+            $original_lines_by_var = collect([$virtual_line->variation_id => $virtual_line]);
+            $total_orig_value = max($effective_price, 1.0);
+        } else {
+            // GAR#1 normal: validar contra las líneas de la venta directa.
+            $original_lines_by_var = TransactionSellLine::where('transaction_id', $original_tx_id)
+                ->whereIn('variation_id', $var_ids)
+                ->get()
+                ->keyBy('variation_id');
 
-        if ($original_lines_by_var->count() !== count($var_ids)) {
-            return $this->err('Algunos artículos seleccionados no pertenecen a esta venta.');
-        }
+            if ($original_lines_by_var->count() !== count($var_ids)) {
+                return $this->err('Algunos artículos seleccionados no pertenecen a esta venta.');
+            }
 
-        // Suma de valor total de los artículos seleccionados (para distribución proporcional del reembolso).
-        $total_orig_value = 0.0;
-        foreach ($original_lines_by_var as $line) {
-            $total_orig_value += (float) $line->unit_price_inc_tax * (float) ($line->quantity ?? 1);
-        }
-        if ($total_orig_value <= 0) {
-            // Fallback: reparto igualitario si no tenemos precios (raro)
-            $total_orig_value = count($var_ids);
+            // Suma de valor total de los artículos seleccionados (para distribución proporcional del reembolso).
+            $total_orig_value = 0.0;
+            foreach ($original_lines_by_var as $line) {
+                $total_orig_value += (float) $line->unit_price_inc_tax * (float) ($line->quantity ?? 1);
+            }
+            if ($total_orig_value <= 0) {
+                // Fallback: reparto igualitario si no tenemos precios (raro)
+                $total_orig_value = count($var_ids);
+            }
         }
 
         // Datos del reemplazo (si aplica)
