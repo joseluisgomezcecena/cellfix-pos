@@ -272,7 +272,6 @@
             });
 
             $('a[data-toggle="tab"]').on('shown.bs.tab', function (e) {
-            $('a[data-toggle="tab"]').on('shown.bs.tab', function (e) {
                 var target = $(e.target).attr('href');
                 if ( target == '#psr_by_cat_tab') {
                     if(typeof product_sell_report_by_category_datatable == 'undefined') {
