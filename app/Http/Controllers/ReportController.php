@@ -1951,9 +1951,11 @@ class ReportController extends Controller
 
             $category_id = $request->get('category_id', null);
             $sub_category_id = $request->get('sub_category_id', null);
-            // Prioridad: sub-categoría > categoría. Si viene sub, filtramos por esa.
+            // Prioridad: sub-categoría > categoría. La sub-cat vive en p.sub_category_id,
+            // no en p.category_id (ahí va la cat padre). Filtrar por p.category_id con el
+            // id de la sub-cat devolvía ~0 resultados.
             if (! empty($sub_category_id)) {
-                $query->where('p.category_id', $sub_category_id);
+                $query->where('p.sub_category_id', $sub_category_id);
             } elseif (! empty($category_id)) {
                 $query->where('p.category_id', $category_id);
             }
@@ -2166,9 +2168,11 @@ class ReportController extends Controller
 
             $category_id = $request->get('category_id', null);
             $sub_category_id = $request->get('sub_category_id', null);
-            // Prioridad: sub-categoría > categoría. Si viene sub, filtramos por esa.
+            // Prioridad: sub-categoría > categoría. La sub-cat vive en p.sub_category_id,
+            // no en p.category_id (ahí va la cat padre). Filtrar por p.category_id con el
+            // id de la sub-cat devolvía ~0 resultados.
             if (! empty($sub_category_id)) {
-                $query->where('p.category_id', $sub_category_id);
+                $query->where('p.sub_category_id', $sub_category_id);
             } elseif (! empty($category_id)) {
                 $query->where('p.category_id', $category_id);
             }
@@ -2828,8 +2832,9 @@ class ReportController extends Controller
 
             $category_id = $request->get('category_id', null);
             $sub_category_id = $request->get('sub_category_id', null);
+            // sub-cat vive en p.sub_category_id, no en p.category_id.
             if (! empty($sub_category_id)) {
-                $query->where('p.category_id', $sub_category_id);
+                $query->where('p.sub_category_id', $sub_category_id);
             } elseif (! empty($category_id)) {
                 $query->where('p.category_id', $category_id);
             }
